@@ -4,7 +4,7 @@
 <body class="login-page">
 <a-layout id="app" class="login-layout" v-cloak>
     <transition name="list" appear>
-        <main class="login-grid">
+        <main id="main-content" class="login-grid" tabindex="-1">
             <section class="login-intro" aria-label="X-UI 控制面板介绍">
                 <div class="login-brand">
                     <div class="brand-mark">X</div>
@@ -25,25 +25,38 @@
                 <div class="login-card">
                     <div class="login-card-kicker">Welcome back</div>
                     <h2 class="login-title">欢迎回来</h2>
+                    <a-alert v-if="loginError" class="login-inline-alert" type="error" show-icon
+                             :message="loginError" aria-live="assertive"></a-alert>
                     <a-form @submit.native.prevent="login">
-                        <a-form-item>
+                        <a-form-item :validate-status="fieldErrors.username ? 'error' : ''"
+                                     :help="fieldErrors.username">
                             <a-input v-model.trim="user.username" name="username" autocomplete="username"
                                      placeholder="用户名" aria-label="用户名"
-                                     @keydown.enter.native="login" autofocus>
+                                     :aria-invalid="fieldErrors.username ? 'true' : 'false'"
+                                     :disabled="loading" @input="clearFieldError('username')"
+                                     @keydown.enter.native="login" ref="usernameInput" autofocus>
                                 <a-icon slot="prefix" type="user"></a-icon>
                             </a-input>
                         </a-form-item>
-                        <a-form-item>
-                            <a-input type="password" v-model.trim="user.password" name="password"
+                        <a-form-item :validate-status="fieldErrors.password ? 'error' : ''"
+                                     :help="fieldErrors.password">
+                            <a-input :type="passwordVisible ? 'text' : 'password'" v-model.trim="user.password" name="password"
                                      autocomplete="current-password" placeholder="密码"
-                                     aria-label="密码" @keydown.enter.native="login">
+                                     aria-label="密码" :aria-invalid="fieldErrors.password ? 'true' : 'false'"
+                                     :disabled="loading" @input="clearFieldError('password')"
+                                     @keydown.enter.native="login" ref="passwordInput">
                                 <a-icon slot="prefix" type="lock"></a-icon>
+                                <button slot="suffix" class="password-toggle" type="button"
+                                        :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
+                                        @click="passwordVisible = !passwordVisible">
+                                    <a-icon :type="passwordVisible ? 'eye-invisible' : 'eye'"></a-icon>
+                                </button>
                             </a-input>
                         </a-form-item>
                         <a-form-item>
                             <a-button type="primary" html-type="submit" block :loading="loading">
                                 <a-icon v-if="!loading" type="login"></a-icon>
-                                登录控制台
+                                [[ loading ? '正在验证…' : '登录控制台' ]]
                             </a-button>
                         </a-form-item>
                     </a-form>
@@ -64,10 +77,33 @@
         data: {
             loading: false,
             user: new User(),
+            passwordVisible: false,
+            loginError: '',
+            fieldErrors: {username: '', password: ''},
         },
         methods: {
+            clearFieldError(field) {
+                this.fieldErrors[field] = '';
+                this.loginError = '';
+            },
+            validateLogin() {
+                this.fieldErrors.username = this.user.username ? '' : '请输入用户名';
+                this.fieldErrors.password = this.user.password ? '' : '请输入密码';
+                if (!this.fieldErrors.username && !this.fieldErrors.password) {
+                    return true;
+                }
+                this.$nextTick(() => {
+                    const target = this.fieldErrors.username ? this.$refs.usernameInput : this.$refs.passwordInput;
+                    if (target && target.focus) target.focus();
+                });
+                return false;
+            },
             async login() {
                 if (this.loading) {
+                    return;
+                }
+                this.loginError = '';
+                if (!this.validateLogin()) {
                     return;
                 }
                 this.loading = true;
@@ -75,6 +111,9 @@
                 this.loading = false;
                 if (msg.success) {
                     location.href = basePath + 'xui/';
+                } else {
+                    this.loginError = msg.msg || '登录失败，请检查账号和密码后重试。';
+                    this.$nextTick(() => this.$refs.passwordInput && this.$refs.passwordInput.focus());
                 }
             }
         }

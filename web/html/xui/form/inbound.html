@@ -10,7 +10,8 @@
         </div>
         <a-form class="inbound-base-form" layout="vertical">
             <a-form-item label='{{ i18n "remark" }}'>
-                <a-input v-model.trim="dbInbound.remark" placeholder="例如：主节点"></a-input>
+                <a-input id="inbound-remark-input" v-model.trim="dbInbound.remark" placeholder="例如：主节点"
+                         aria-label="入站备注"></a-input>
             </a-form-item>
             <a-form-item label='{{ i18n "protocol" }}'>
                 <a-select v-model="inbound.protocol">
@@ -25,7 +26,8 @@
                 <a-input v-model.trim="inbound.listen" placeholder="留空监听所有 IP"></a-input>
             </a-form-item>
             <a-form-item label="端口" required>
-                <a-input type="number" min="1" max="65535" v-model.number="inbound.port"></a-input>
+                <a-input id="inbound-port-input" type="number" min="1" max="65535"
+                         v-model.number="inbound.port" aria-label="入站端口"></a-input>
             </a-form-item>
             <a-form-item>
                 <span slot="label">

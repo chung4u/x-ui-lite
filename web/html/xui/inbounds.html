@@ -5,7 +5,7 @@
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
-        <a-layout-content>
+        <a-layout-content id="main-content" tabindex="-1">
             <a-spin :spinning="spinning" :delay="500" tip="正在加载入站配置">
                 <div class="page-shell">
                     <transition name="list" appear>
@@ -37,7 +37,7 @@
 
                     <transition name="list" appear>
                         <section class="inbound-summary-grid" aria-label="流量概览">
-                            <a-row :gutter="16">
+                            <a-row :gutter="16" type="flex">
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon"><a-icon type="cloud-upload"></a-icon></div>
@@ -104,7 +104,8 @@
                                 </a-radio-group>
                             </div>
                             <div class="inbound-filter-bar" aria-label="入站筛选条件">
-                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口、协议或 ID">
+                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口、协议或 ID"
+                                         aria-label="搜索入站配置" ref="filterSearch">
                                     <a-icon slot="prefix" type="search"></a-icon>
                                 </a-input>
                                 <a-select v-model="filters.protocol" aria-label="按协议筛选">
@@ -125,6 +126,12 @@
                                     <a-select-option value="port-desc">端口从大到小</a-select-option>
                                     <a-select-option value="remark-asc">按备注名称</a-select-option>
                                 </a-select>
+                            </div>
+                            <div class="active-filter-context" v-if="activeFilterLabels.length > 0" aria-live="polite">
+                                <span><a-icon type="filter"></a-icon> 当前条件</span>
+                                <a-tag v-for="filter in activeFilterLabels" :key="filter.key" closable
+                                       @close.prevent="clearFilter(filter.key)">[[ filter.label ]]</a-tag>
+                                <small>按 / 聚焦搜索 · 按 R 刷新</small>
                             </div>
 
                             <div class="desktop-inbound-table">
@@ -185,6 +192,7 @@
                                     <template slot="enable" slot-scope="text, dbInbound">
                                         <a-switch v-model="dbInbound.enable" :loading="isPending(dbInbound.id)"
                                                   :disabled="isPending(dbInbound.id)"
+                                                  :aria-label="`${dbInbound.remark || '未命名入站'}启用状态`"
                                                   @change="checked => switchEnable(dbInbound, checked)"></a-switch>
                                     </template>
                                     <template slot="condition" slot-scope="text, dbInbound">
@@ -207,6 +215,7 @@
                                     <a-button v-if="dbInbounds.length === 0" type="primary" icon="plus" @click="openAddInbound">
                                         创建第一个入站
                                     </a-button>
+                                    <a-button v-else icon="undo" @click="resetFilters">清除筛选条件</a-button>
                                 </a-empty>
                                 <article v-for="dbInbound in displayedInbounds" :key="dbInbound.id" class="inbound-mobile-card">
                                     <div class="inbound-mobile-head">
@@ -216,6 +225,7 @@
                                         </div>
                                         <a-switch v-model="dbInbound.enable" :loading="isPending(dbInbound.id)"
                                                   :disabled="isPending(dbInbound.id)"
+                                                  :aria-label="`${dbInbound.remark || '未命名入站'}启用状态`"
                                                   @change="checked => switchEnable(dbInbound, checked)"></a-switch>
                                     </div>
                                     <div class="inbound-mobile-tags">
@@ -260,6 +270,7 @@
                     </transition>
                 </div>
             </a-spin>
+            <a-back-top></a-back-top>
         </a-layout-content>
     </a-layout>
 </a-layout>
@@ -344,6 +355,7 @@
             },
             loadError: false,
             pendingInboundIds: {},
+            filtersInitialized: false,
         },
         methods: {
             loading(spinning=true) {
@@ -386,6 +398,36 @@
                 this.filters.status = 'all';
                 this.filters.sort = 'id-asc';
                 this.filters.quick = 'all';
+            },
+            clearFilter(key) {
+                const defaults = {query: '', protocol: 'all', status: 'all', sort: 'id-asc', quick: 'all'};
+                if (Object.prototype.hasOwnProperty.call(defaults, key)) {
+                    this.filters[key] = defaults[key];
+                }
+            },
+            syncFiltersToUrl() {
+                if (!this.filtersInitialized) return;
+                const params = new URLSearchParams();
+                if (this.filters.query) params.set('q', this.filters.query);
+                if (this.filters.protocol !== 'all') params.set('protocol', this.filters.protocol);
+                if (this.filters.status !== 'all') params.set('status', this.filters.status);
+                if (this.filters.sort !== 'id-asc') params.set('sort', this.filters.sort);
+                if (this.filters.quick !== 'all') params.set('quick', this.filters.quick);
+                const query = params.toString();
+                history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}`);
+            },
+            handleKeyboardShortcut(event) {
+                const target = event.target;
+                const editing = target && (target.matches('input, textarea, select') || target.isContentEditable);
+                if (event.key === '/' && !editing) {
+                    event.preventDefault();
+                    if (this.$refs.filterSearch && this.$refs.filterSearch.focus) this.$refs.filterSearch.focus();
+                } else if (event.key.toLowerCase() === 'r' && !editing && !event.metaKey && !event.ctrlKey) {
+                    event.preventDefault();
+                    this.getDBInbounds();
+                } else if (event.key === 'Escape' && editing && target.blur) {
+                    target.blur();
+                }
             },
             protocolColor(protocol) {
                 const colors = {
@@ -624,13 +666,37 @@
                 return msg;
             },
         },
+        watch: {
+            filters: {
+                deep: true,
+                handler() {
+                    this.syncFiltersToUrl();
+                },
+            },
+        },
         mounted() {
-            const quick = new URLSearchParams(location.search).get('quick');
+            const params = new URLSearchParams(location.search);
+            const quick = params.get('quick');
             const allowedQuickFilters = ['all', 'attention', 'expired', 'expiring', 'high-usage', 'exhausted', 'disabled'];
             if (allowedQuickFilters.includes(quick)) {
                 this.filters.quick = quick;
             }
+            const protocol = params.get('protocol');
+            if (['all', 'vmess', 'vless', 'trojan', 'shadowsocks', 'socks', 'http', 'dokodemo-door'].includes((protocol || '').toLowerCase())) {
+                this.filters.protocol = protocol.toLowerCase();
+            }
+            const status = params.get('status');
+            if (['all', 'enabled', 'disabled'].includes(status)) this.filters.status = status;
+            const sort = params.get('sort');
+            if (['id-asc', 'traffic-desc', 'port-asc', 'port-desc', 'remark-asc'].includes(sort)) this.filters.sort = sort;
+            this.filters.query = params.get('q') || '';
+            this.filtersInitialized = true;
+            this.syncFiltersToUrl();
+            document.addEventListener('keydown', this.handleKeyboardShortcut);
             this.getDBInbounds();
+        },
+        beforeDestroy() {
+            document.removeEventListener('keydown', this.handleKeyboardShortcut);
         },
         computed: {
             lastUpdatedLabel() {
@@ -648,6 +714,18 @@
             hasActiveFilters() {
                 return this.filters.query !== '' || this.filters.protocol !== 'all' ||
                     this.filters.status !== 'all' || this.filters.sort !== 'id-asc' || this.filters.quick !== 'all';
+            },
+            activeFilterLabels() {
+                const labels = [];
+                if (this.filters.query) labels.push({key: 'query', label: `搜索：${this.filters.query}`});
+                if (this.filters.quick !== 'all') {
+                    const quickLabels = {attention: '需要关注', expired: '已到期', expiring: '7 天内到期', 'high-usage': '流量紧张', exhausted: '流量耗尽', disabled: '已停用'};
+                    labels.push({key: 'quick', label: quickLabels[this.filters.quick]});
+                }
+                if (this.filters.protocol !== 'all') labels.push({key: 'protocol', label: `协议：${this.filters.protocol.toUpperCase()}`});
+                if (this.filters.status !== 'all') labels.push({key: 'status', label: this.filters.status === 'enabled' ? '仅看已启用' : '仅看已停用'});
+                if (this.filters.sort !== 'id-asc') labels.push({key: 'sort', label: '已调整排序'});
+                return labels;
             },
             conditionCounts() {
                 const counts = {all: this.dbInbounds.length, attention: 0, expired: 0, expiring: 0, highUsage: 0, exhausted: 0, disabled: 0};

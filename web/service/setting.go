@@ -39,11 +39,12 @@ type SettingService struct {
 }
 
 type MonthlyTrafficState struct {
-	Initialized bool   `json:"initialized"`
-	PeriodStart string `json:"periodStart"`
-	UsedBytes   uint64 `json:"usedBytes"`
-	LastSent    uint64 `json:"lastSent"`
-	LastRecv    uint64 `json:"lastRecv"`
+	Initialized  bool              `json:"initialized"`
+	PeriodStart  string            `json:"periodStart"`
+	UsedBytes    uint64            `json:"usedBytes"`
+	LastSent     uint64            `json:"lastSent"`
+	LastRecv     uint64            `json:"lastRecv"`
+	DailyTraffic map[string]uint64 `json:"dailyTraffic,omitempty"`
 }
 
 func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {

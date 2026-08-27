@@ -23,6 +23,8 @@
 
 
 {{define "commonSider"}}
+<a class="skip-link" href="#main-content">跳到主要内容</a>
+<div class="navigation-progress" :class="{ active: siderDrawer.navigating }" aria-hidden="true"></div>
 <a-layout-sider id="sider" :width="236" collapsible breakpoint="md" collapsed-width="0">
     <div class="sider-brand">
         <div class="brand-mark">X</div>
@@ -33,7 +35,7 @@
     </div>
     <div class="sider-nav-label">工作台</div>
     <a-menu theme="dark" mode="inline" :selected-keys="['{{ .request_uri }}']"
-            @click="({key}) => location.href = key">
+            @click="({key}) => siderDrawer.navigate(key)">
         {{template "menuItems" .}}
     </a-menu>
     <div class="sider-footer">
@@ -44,9 +46,11 @@
 <a-drawer id="sider-drawer" placement="left" :closable="false"
           @close="siderDrawer.close()"
           :visible="siderDrawer.visible" :wrap-style="{ padding: 0 }">
-    <div class="drawer-handle" @click="siderDrawer.change()" slot="handle">
+    <button class="drawer-handle" type="button" @click="siderDrawer.change()" slot="handle"
+            :aria-label="siderDrawer.visible ? '关闭导航菜单' : '打开导航菜单'"
+            :aria-expanded="siderDrawer.visible ? 'true' : 'false'">
         <a-icon :type="siderDrawer.visible ? 'close' : 'menu-fold'"></a-icon>
-    </div>
+    </button>
     <div class="sider-brand">
         <div class="brand-mark">X</div>
         <div class="brand-copy">
@@ -56,7 +60,7 @@
     </div>
     <div class="sider-nav-label">工作台</div>
     <a-menu theme="dark" mode="inline" :selected-keys="['{{ .request_uri }}']"
-        @click="({key}) => location.href = key">
+        @click="({key}) => siderDrawer.navigate(key)">
         {{template "menuItems" .}}
     </a-menu>
 </a-drawer>
@@ -64,6 +68,7 @@
 
     const siderDrawer = {
         visible: false,
+        navigating: false,
         show() {
             this.visible = true;
         },
@@ -72,6 +77,28 @@
         },
         change() {
             this.visible = !this.visible;
+        },
+        navigate(target) {
+            if (!target || this.navigating || target === location.pathname + location.search) {
+                this.close();
+                return;
+            }
+            const go = () => {
+                this.close();
+                this.navigating = true;
+                window.setTimeout(() => location.href = target, 90);
+            };
+            if (target.endsWith('/logout') || target.endsWith('logout')) {
+                Vue.prototype.$confirm({
+                    title: '确认退出登录？',
+                    content: '退出后需要重新输入管理账号才能访问控制面板。',
+                    okText: '退出登录',
+                    cancelText: '取消',
+                    onOk: go,
+                });
+                return;
+            }
+            go();
         }
     };
 

@@ -2098,3 +2098,344 @@ body.login-page {
         padding: 26px 20px;
     }
 }
+
+/* Phase 3 interaction foundation */
+.skip-link {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 2100;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--xui-ink);
+    color: #fff;
+    font-weight: 700;
+    transform: translateY(-160%);
+    transition: transform .18s ease;
+}
+
+.skip-link:focus {
+    color: #fff;
+    transform: translateY(0);
+}
+
+.navigation-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 2200;
+    width: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--xui-primary), #8b69e8);
+    opacity: 0;
+    transition: width .3s ease, opacity .18s ease;
+}
+
+.navigation-progress.active {
+    width: 82%;
+    opacity: 1;
+}
+
+:where(a, button, input, textarea, select, [role="button"], [role="link"]):focus-visible {
+    outline: 3px solid rgba(79, 124, 255, .34);
+    outline-offset: 3px;
+}
+
+.password-toggle {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--xui-muted);
+    cursor: pointer;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+    background: var(--xui-primary-soft);
+    color: var(--xui-primary);
+}
+
+.login-inline-alert {
+    margin-bottom: 18px;
+    border-radius: 11px;
+}
+
+.active-filter-context {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    gap: 7px;
+    margin: -2px 0 16px;
+    padding: 8px 10px;
+    border: 1px solid #dfe6f6;
+    border-radius: 11px;
+    background: #f7f9ff;
+    flex-wrap: wrap;
+}
+
+.active-filter-context > span {
+    margin-right: 2px;
+    color: var(--xui-text);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.active-filter-context small {
+    margin-left: auto;
+    color: var(--xui-muted);
+    font-size: 11px;
+}
+
+.modal-shortcut-hint {
+    float: left;
+    padding: 9px 0;
+    color: var(--xui-muted);
+    font-size: 11px;
+}
+
+.settings-pending-bar {
+    position: sticky;
+    bottom: 18px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 18px;
+    padding: 13px 14px 13px 16px;
+    border: 1px solid #d7e0f7;
+    border-radius: 15px;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 16px 42px rgba(25, 39, 70, .16);
+    backdrop-filter: blur(14px);
+}
+
+.settings-pending-copy,
+.settings-pending-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-pending-copy > .anticon {
+    color: var(--xui-primary);
+    font-size: 19px;
+}
+
+.settings-pending-copy div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.settings-pending-copy strong {
+    color: var(--xui-ink);
+    font-size: 13px;
+}
+
+.settings-pending-copy span,
+.keyboard-save-hint {
+    overflow: hidden;
+    color: var(--xui-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.traffic-insights {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 14px;
+    margin-top: 8px;
+    grid-template-columns: minmax(250px, .72fr) minmax(420px, 1.8fr);
+}
+
+.traffic-forecast-card,
+.daily-traffic-panel {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(79, 124, 255, .14);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .72);
+}
+
+.traffic-forecast-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.traffic-forecast-card > .ant-tag {
+    position: absolute;
+    top: 12px;
+    right: 10px;
+}
+
+.traffic-insight-icon {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--xui-primary-soft);
+    color: var(--xui-primary);
+    font-size: 17px;
+}
+
+.traffic-forecast-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.traffic-forecast-copy span,
+.daily-traffic-head span {
+    color: var(--xui-text);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.traffic-forecast-copy strong {
+    margin: 2px 0;
+    color: var(--xui-ink);
+    font-size: 19px;
+    white-space: nowrap;
+}
+
+.traffic-forecast-copy small,
+.daily-traffic-head small {
+    color: var(--xui-muted);
+    font-size: 10px;
+}
+
+.daily-traffic-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.daily-traffic-head > div {
+    display: flex;
+    flex-direction: column;
+}
+
+.daily-traffic-head > strong {
+    color: var(--xui-muted);
+    font-size: 11px;
+}
+
+.daily-traffic-chart {
+    display: flex;
+    height: 124px;
+    align-items: stretch;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 3px 2px 0;
+}
+
+.daily-traffic-column {
+    display: flex;
+    min-width: 26px;
+    flex: 1 0 26px;
+    align-items: center;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.daily-traffic-value,
+.daily-traffic-date {
+    color: var(--xui-muted);
+    font-size: 9px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.daily-traffic-bar-track {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 74px;
+    flex: 1;
+    overflow: hidden;
+    border-radius: 7px 7px 4px 4px;
+    background: #eef2f8;
+}
+
+.daily-traffic-bar {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    border-radius: 7px 7px 4px 4px;
+    background: linear-gradient(180deg, #7798ff, var(--xui-primary));
+    transition: height .3s ease;
+}
+
+@media (max-width: 900px) {
+    .traffic-insights {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-pending-bar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .settings-pending-actions {
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 576px) {
+    .active-filter-context small,
+    .keyboard-save-hint,
+    .modal-shortcut-hint {
+        display: none;
+    }
+
+    .settings-pending-actions .ant-btn {
+        flex: 1;
+    }
+
+    .traffic-forecast-card {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .daily-traffic-panel {
+        padding: 14px 10px;
+    }
+
+    .daily-traffic-chart {
+        gap: 4px;
+    }
+
+    .ant-btn,
+    .drawer-handle {
+        min-height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}

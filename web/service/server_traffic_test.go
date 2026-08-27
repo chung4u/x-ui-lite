@@ -109,3 +109,32 @@ func TestIsVirtualTrafficInterface(t *testing.T) {
 		}
 	}
 }
+
+func TestTrafficDailySeriesSortsDates(t *testing.T) {
+	got := trafficDailySeries(map[string]uint64{
+		"2026-08-28": 30,
+		"2026-08-26": 10,
+		"2026-08-27": 20,
+	})
+	if len(got) != 3 || got[0].Date != "2026-08-26" || got[2].Date != "2026-08-28" {
+		t.Fatalf("trafficDailySeries() returned unexpected order: %#v", got)
+	}
+}
+
+func TestTrafficForecast(t *testing.T) {
+	location := time.FixedZone("UTC+8", 8*60*60)
+	now := time.Date(2026, time.August, 28, 0, 0, 0, 0, location)
+	nextReset := time.Date(2026, time.August, 31, 0, 0, 0, 0, location)
+	average, projected, confidence := trafficForecast(300, map[string]uint64{
+		"2026-08-26": 90,
+		"2026-08-27": 110,
+	}, now, nextReset)
+	if average != 100 || projected != 600 || confidence != "low" {
+		t.Fatalf("trafficForecast() = (%d, %d, %q), want (100, 600, low)", average, projected, confidence)
+	}
+
+	average, projected, confidence = trafficForecast(300, nil, now, nextReset)
+	if average != 0 || projected != 300 || confidence != "insufficient" {
+		t.Fatalf("trafficForecast() without history = (%d, %d, %q)", average, projected, confidence)
+	}
+}

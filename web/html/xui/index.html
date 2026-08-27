@@ -5,7 +5,7 @@
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
-        <a-layout-content>
+        <a-layout-content id="main-content" tabindex="-1">
             <a-spin :spinning="spinning" :delay="200" :tip="loadingTip">
                 <div class="page-shell">
                     <transition name="list" appear>
@@ -48,7 +48,11 @@
                             </div>
                             <div class="health-issue-list" v-if="healthIssues.length > 0">
                                 <a-tag v-for="issue in healthIssues" :key="issue.key" :color="issue.color"
-                                       :class="{ 'health-issue-link': issue.href }" @click="openHealthIssue(issue)">
+                                       :class="{ 'health-issue-link': issue.href }"
+                                       :role="issue.href ? 'link' : null" :tabindex="issue.href ? 0 : null"
+                                       @click="openHealthIssue(issue)"
+                                       @keydown.enter.prevent="openHealthIssue(issue)"
+                                       @keydown.space.prevent="openHealthIssue(issue)">
                                     [[ issue.label ]]
                                 </a-tag>
                             </div>
@@ -60,7 +64,7 @@
 
                     <transition name="list" appear>
                         <section aria-label="资源使用情况">
-                            <a-row :gutter="16">
+                            <a-row :gutter="16" type="flex">
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
                                     <a-card class="resource-card" hoverable>
                                         <div class="resource-card-head">
@@ -152,6 +156,38 @@
                                     <a :href="basePath + 'xui/setting?tab=traffic'">基础设定</a>
                                 </div>
                             </div>
+                            <div class="traffic-insights" v-if="status.monthlyTraffic.enabled">
+                                <div class="traffic-forecast-card">
+                                    <div class="traffic-insight-icon"><a-icon type="line-chart"></a-icon></div>
+                                    <div class="traffic-forecast-copy">
+                                        <span>预计月底用量</span>
+                                        <strong>[[ forecastUsageLabel ]]</strong>
+                                        <small>按当前日均 [[ sizeFormat(status.monthlyTraffic.averageDaily) ]] 估算 · [[ forecastConfidenceLabel ]]</small>
+                                    </div>
+                                    <a-tag :color="forecastStatus.color">[[ forecastStatus.label ]]</a-tag>
+                                </div>
+                                <div class="daily-traffic-panel">
+                                    <div class="daily-traffic-head">
+                                        <div>
+                                            <span>每日流量趋势</span>
+                                            <small>上传与下载合计，从启用记录后开始统计</small>
+                                        </div>
+                                        <strong>[[ trafficHistoryRange ]]</strong>
+                                    </div>
+                                    <div class="daily-traffic-chart" v-if="status.monthlyTraffic.daily.length > 0"
+                                         role="img" :aria-label="trafficTrendAriaLabel">
+                                        <div class="daily-traffic-column" v-for="day in status.monthlyTraffic.daily" :key="day.date"
+                                             :title="`${moment(day.date).format('MM 月 DD 日')}：${sizeFormat(day.used)}`">
+                                            <span class="daily-traffic-value">[[ compactSize(day.used) ]]</span>
+                                            <span class="daily-traffic-bar-track">
+                                                <span class="daily-traffic-bar" :style="{ height: trafficBarHeight(day.used) }"></span>
+                                            </span>
+                                            <span class="daily-traffic-date">[[ moment(day.date).format('DD') ]]</span>
+                                        </div>
+                                    </div>
+                                    <a-empty v-else description="今日开始记录，稍后将生成趋势"></a-empty>
+                                </div>
+                            </div>
                             <a-button v-else type="primary" icon="setting" @click="location.href = basePath + 'xui/setting?tab=traffic'">
                                 前往基础设定
                             </a-button>
@@ -160,7 +196,7 @@
 
                     <transition name="list" appear>
                         <section aria-label="运行概览">
-                            <a-row :gutter="16">
+                            <a-row :gutter="16" type="flex">
                                 <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon success"><a-icon type="rocket"></a-icon></div>
@@ -309,6 +345,10 @@
                 resetDay: 1,
                 periodStart: null,
                 nextReset: null,
+                daily: [],
+                averageDaily: 0,
+                projectedPeriodEnd: 0,
+                forecastConfidence: 'insufficient',
             };
             this.netIO = {up: 0, down: 0};
             this.netTraffic = {sent: 0, recv: 0};
@@ -326,7 +366,8 @@
             this.loads = data.loads.map(load => toFixed(load, 2));
             this.mem = new CurTotal(data.mem.current, data.mem.total);
             if (data.monthlyTraffic != null) {
-                this.monthlyTraffic = data.monthlyTraffic;
+                this.monthlyTraffic = Object.assign(this.monthlyTraffic, data.monthlyTraffic);
+                this.monthlyTraffic.daily = Array.isArray(this.monthlyTraffic.daily) ? this.monthlyTraffic.daily : [];
             }
             this.netIO = data.netIO;
             this.netTraffic = data.netTraffic;
@@ -387,6 +428,8 @@
                 exhausted: 0,
                 highUsage: 0,
             },
+            pollTimer: null,
+            pollCycle: 0,
         },
         methods: {
             loading(spinning, tip = '加载中') {
@@ -470,8 +513,49 @@
             },
             openHealthIssue(issue) {
                 if (issue.href) {
-                    location.href = basePath + issue.href;
+                    siderDrawer.navigate(basePath + issue.href);
                 }
+            },
+            compactSize(bytes) {
+                const value = Number(bytes || 0);
+                if (value >= 1024 * 1024 * 1024) return `${toFixed(value / (1024 * 1024 * 1024), 1)}G`;
+                if (value >= 1024 * 1024) return `${toFixed(value / (1024 * 1024), 1)}M`;
+                if (value >= 1024) return `${toFixed(value / 1024, 1)}K`;
+                return `${value}B`;
+            },
+            trafficBarHeight(used) {
+                const max = this.trafficHistoryMax;
+                if (max <= 0) return '4px';
+                return `${Math.max(6, Number(used || 0) / max * 100)}%`;
+            },
+            async pollStatus() {
+                if (document.hidden) {
+                    return;
+                }
+                try {
+                    await this.getStatus();
+                    if (this.pollCycle % 15 === 0) {
+                        await this.getInboundHealth();
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+                this.pollCycle++;
+            },
+            scheduleStatusPoll() {
+                window.clearTimeout(this.pollTimer);
+                this.pollTimer = window.setTimeout(async () => {
+                    await this.pollStatus();
+                    this.scheduleStatusPoll();
+                }, 2000);
+            },
+            async handleVisibilityChange() {
+                if (document.hidden) {
+                    window.clearTimeout(this.pollTimer);
+                    return;
+                }
+                await this.pollStatus();
+                this.scheduleStatusPoll();
             },
             async openSelectV2rayVersion() {
                 this.loading(true);
@@ -596,21 +680,47 @@
                 if (!nextReset) return '等待重置时间';
                 return `${moment(nextReset).format('YYYY-MM-DD HH:mm')} 清零`;
             },
+            trafficHistoryMax() {
+                return Math.max(0, ...this.status.monthlyTraffic.daily.map(day => Number(day.used || 0)));
+            },
+            trafficHistoryRange() {
+                const daily = this.status.monthlyTraffic.daily;
+                if (daily.length === 0) return '等待数据';
+                if (daily.length === 1) return moment(daily[0].date).format('MM 月 DD 日');
+                return `${moment(daily[0].date).format('MM.DD')} – ${moment(daily[daily.length - 1].date).format('MM.DD')}`;
+            },
+            trafficTrendAriaLabel() {
+                return this.status.monthlyTraffic.daily
+                    .map(day => `${moment(day.date).format('MM 月 DD 日')} ${sizeFormat(day.used)}`)
+                    .join('，');
+            },
+            forecastConfidenceLabel() {
+                const labels = {high: '可信度高', medium: '可信度中', low: '样本较少', insufficient: '等待样本'};
+                return labels[this.status.monthlyTraffic.forecastConfidence] || '等待样本';
+            },
+            forecastUsageLabel() {
+                return sizeFormat(this.status.monthlyTraffic.projectedPeriodEnd).replace(' ', '\u00a0');
+            },
+            forecastStatus() {
+                const projected = Number(this.status.monthlyTraffic.projectedPeriodEnd || 0);
+                const limit = Number(this.status.monthlyTraffic.limit || 0);
+                if (limit <= 0 || this.status.monthlyTraffic.forecastConfidence === 'insufficient') {
+                    return {label: '积累数据中', color: 'blue'};
+                }
+                const ratio = projected / limit;
+                if (ratio >= 1) return {label: '预计超额', color: 'red'};
+                if (ratio >= .9) return {label: '接近额度', color: 'orange'};
+                return {label: '额度充足', color: 'green'};
+            },
         },
         async mounted() {
-            let cycle = 0;
-            while (true) {
-                try {
-                    await this.getStatus();
-                    if (cycle % 15 === 0) {
-                        await this.getInboundHealth();
-                    }
-                } catch (e) {
-                    console.error(e);
-                }
-                cycle++;
-                await PromiseUtil.sleep(2000);
-            }
+            document.addEventListener('visibilitychange', this.handleVisibilityChange);
+            await this.pollStatus();
+            this.scheduleStatusPoll();
+        },
+        beforeDestroy() {
+            document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+            window.clearTimeout(this.pollTimer);
         },
     });
 

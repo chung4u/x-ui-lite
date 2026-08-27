@@ -5,7 +5,7 @@
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
-        <a-layout-content>
+        <a-layout-content id="main-content" tabindex="-1">
             <a-spin :spinning="spinning" :delay="500" tip="正在加载面板配置">
                 <div class="page-shell">
                     <transition name="list" appear>
@@ -20,7 +20,8 @@
                                     <a-icon :type="saveBtnDisable ? 'check-circle' : 'edit'"></a-icon>
                                     [[ saveBtnDisable ? '已保存' : `${changedSettingLabels.length} 项待保存` ]]
                                 </div>
-                                <a-button type="primary" icon="save" :disabled="saveBtnDisable" @click="updateAllSetting">保存配置</a-button>
+                                <a-button type="primary" icon="save" :disabled="saveBtnDisable"
+                                          :loading="savingSettings" @click="updateAllSetting">保存配置</a-button>
                             </div>
                         </header>
                     </transition>
@@ -52,7 +53,7 @@
                     </transition>
 
                     <transition name="list" appear>
-                        <a-card class="settings-card" hoverable>
+                        <a-card class="settings-card">
                             <a-tabs v-model="activeTab">
                                 <a-tab-pane key="1" tab="面板配置">
                                     <a-list class="setting-list" item-layout="horizontal">
@@ -115,13 +116,31 @@
                                     <p>重启会短暂中断控制面板连接。如果修改了端口、证书或访问路径，请先确认新地址可访问。</p>
                                 </div>
                             </div>
-                            <a-button type="danger" icon="poweroff" :disabled="!saveBtnDisable || spinning" @click="restartPanel">
-                                重启面板
+                            <a-button type="danger" icon="poweroff" :loading="restarting"
+                                      :disabled="!saveBtnDisable || spinning || savingSettings" @click="restartPanel">
+                                [[ restarting ? '正在重启…' : '重启面板' ]]
                             </a-button>
                         </section>
                     </transition>
+                    <transition name="list">
+                        <aside class="settings-pending-bar" v-if="!saveBtnDisable" aria-live="polite">
+                            <div class="settings-pending-copy">
+                                <a-icon type="edit"></a-icon>
+                                <div>
+                                    <strong>有 [[ changedSettingLabels.length ]] 项更改尚未保存</strong>
+                                    <span>[[ changedSettingLabels.join('、') ]]</span>
+                                </div>
+                            </div>
+                            <div class="settings-pending-actions">
+                                <span class="keyboard-save-hint">⌘ / Ctrl + S</span>
+                                <a-button :disabled="savingSettings" @click="discardChanges">放弃更改</a-button>
+                                <a-button type="primary" icon="save" :loading="savingSettings" @click="updateAllSetting">保存配置</a-button>
+                            </div>
+                        </aside>
+                    </transition>
                 </div>
             </a-spin>
+            <a-back-top></a-back-top>
         </a-layout-content>
     </a-layout>
 </a-layout>
@@ -140,6 +159,8 @@
             saveBtnDisable: true,
             user: {},
             updatingUser: false,
+            savingSettings: false,
+            restarting: false,
             settingsLoadError: false,
             activeTab: '1',
         },
@@ -147,10 +168,10 @@
             loading(spinning = true) {
                 this.spinning = spinning;
             },
-            async getAllSetting() {
-                this.loading(true);
+            async getAllSetting(showLoading = true) {
+                if (showLoading) this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/all");
-                this.loading(false);
+                if (showLoading) this.loading(false);
                 if (msg.success) {
                     this.oldAllSetting = new AllSetting(msg.obj);
                     this.allSetting = new AllSetting(msg.obj);
@@ -199,6 +220,9 @@
                 });
             },
             async updateAllSetting() {
+                if (this.savingSettings || this.saveBtnDisable) {
+                    return;
+                }
                 const validationError = this.validateSettings();
                 if (validationError) {
                     this.$message.error(validationError);
@@ -215,11 +239,25 @@
                         return;
                     }
                 }
-                this.loading(true);
+                this.savingSettings = true;
                 const msg = await HttpUtil.post("/xui/setting/update", this.allSetting);
-                this.loading(false);
+                this.savingSettings = false;
                 if (msg.success) {
-                    await this.getAllSetting();
+                    await this.getAllSetting(false);
+                }
+            },
+            async discardChanges() {
+                if (this.saveBtnDisable || this.savingSettings) return;
+                const confirmed = await this.confirmDialog({
+                    title: '放弃未保存的更改？',
+                    content: `将撤销：${this.changedSettingLabels.join('、')}。服务器上的已保存配置不会改变。`,
+                    okText: '放弃更改',
+                    okType: 'danger',
+                    cancelText: '继续编辑',
+                });
+                if (confirmed) {
+                    this.allSetting = new AllSetting(this.oldAllSetting);
+                    this.$message.success('已恢复到上次保存的配置');
                 }
             },
             async updateUser() {
@@ -227,15 +265,14 @@
                     return;
                 }
                 this.updatingUser = true;
-                this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/updateUser", this.user);
-                this.loading(false);
                 this.updatingUser = false;
                 if (msg.success) {
                     this.user = {};
                 }
             },
             async restartPanel() {
+                if (this.restarting) return;
                 const confirmed = await this.confirmDialog({
                     title: '确认重启面板？',
                     content: '面板将在 3 秒后重启，当前管理连接会短暂中断。请确保已保存配置，并且保留服务器独立恢复通道。',
@@ -246,13 +283,26 @@
                 if (!confirmed) {
                     return;
                 }
-                this.loading(true);
+                this.restarting = true;
                 const msg = await HttpUtil.post("/xui/setting/restartPanel");
-                this.loading(false);
                 if (msg.success) {
                     this.loading(true);
                     await PromiseUtil.sleep(5000);
                     location.reload();
+                } else {
+                    this.restarting = false;
+                }
+            },
+            syncActiveTabToUrl() {
+                const names = {'1': 'panel', '2': 'account', '3': 'xray', '4': 'traffic', '5': 'other'};
+                const params = new URLSearchParams(location.search);
+                params.set('tab', names[this.activeTab] || 'panel');
+                history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+            },
+            handleKeyboardShortcut(event) {
+                if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                    event.preventDefault();
+                    if (!this.saveBtnDisable && !this.savingSettings) this.updateAllSetting();
                 }
             }
         },
@@ -300,11 +350,14 @@
                     this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
                 },
             },
+            activeTab() {
+                this.syncActiveTabToUrl();
+            },
         },
         async mounted() {
-            if (new URLSearchParams(location.search).get('tab') === 'traffic') {
-                this.activeTab = '4';
-            }
+            const tabs = {panel: '1', account: '2', xray: '3', traffic: '4', other: '5'};
+            this.activeTab = tabs[new URLSearchParams(location.search).get('tab')] || '1';
+            this.syncActiveTabToUrl();
             await this.getAllSetting();
             this.beforeUnloadHandler = event => {
                 if (this.saveBtnDisable) {
@@ -314,9 +367,11 @@
                 event.returnValue = '';
             };
             window.addEventListener('beforeunload', this.beforeUnloadHandler);
+            document.addEventListener('keydown', this.handleKeyboardShortcut);
         },
         beforeDestroy() {
             window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+            document.removeEventListener('keydown', this.handleKeyboardShortcut);
         },
     });
 

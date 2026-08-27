@@ -14,9 +14,11 @@ import (
 	"github.com/shirou/gopsutil/net"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -69,14 +71,23 @@ type Status struct {
 }
 
 type MonthlyTraffic struct {
-	Enabled     bool      `json:"enabled"`
-	Limit       uint64    `json:"limit"`
-	Used        uint64    `json:"used"`
-	Remaining   uint64    `json:"remaining"`
-	Percent     float64   `json:"percent"`
-	ResetDay    int       `json:"resetDay"`
-	PeriodStart time.Time `json:"periodStart"`
-	NextReset   time.Time `json:"nextReset"`
+	Enabled            bool           `json:"enabled"`
+	Limit              uint64         `json:"limit"`
+	Used               uint64         `json:"used"`
+	Remaining          uint64         `json:"remaining"`
+	Percent            float64        `json:"percent"`
+	ResetDay           int            `json:"resetDay"`
+	PeriodStart        time.Time      `json:"periodStart"`
+	NextReset          time.Time      `json:"nextReset"`
+	Daily              []DailyTraffic `json:"daily"`
+	AverageDaily       uint64         `json:"averageDaily"`
+	ProjectedPeriodEnd uint64         `json:"projectedPeriodEnd"`
+	ForecastConfidence string         `json:"forecastConfidence"`
+}
+
+type DailyTraffic struct {
+	Date string `json:"date"`
+	Used uint64 `json:"used"`
 }
 
 type Release struct {
@@ -132,6 +143,41 @@ func trafficPeriodStart(now time.Time, resetDay int) time.Time {
 func trafficNextReset(periodStart time.Time, resetDay int) time.Time {
 	nextMonth := time.Date(periodStart.Year(), periodStart.Month()+1, 1, 0, 0, 0, 0, periodStart.Location())
 	return trafficResetDate(nextMonth.Year(), nextMonth.Month(), resetDay, periodStart.Location())
+}
+
+func trafficDailySeries(daily map[string]uint64) []DailyTraffic {
+	keys := make([]string, 0, len(daily))
+	for date := range daily {
+		keys = append(keys, date)
+	}
+	sort.Strings(keys)
+	series := make([]DailyTraffic, 0, len(keys))
+	for _, date := range keys {
+		series = append(series, DailyTraffic{Date: date, Used: daily[date]})
+	}
+	return series
+}
+
+func trafficForecast(used uint64, daily map[string]uint64, now, nextReset time.Time) (average, projected uint64, confidence string) {
+	if len(daily) == 0 {
+		return 0, used, "insufficient"
+	}
+	var dailyTotal uint64
+	for _, value := range daily {
+		dailyTotal += value
+	}
+	average = dailyTotal / uint64(len(daily))
+	remainingDays := math.Max(0, nextReset.Sub(now).Hours()/24)
+	projected = used + uint64(math.Round(float64(average)*remainingDays))
+	switch {
+	case len(daily) >= 7:
+		confidence = "high"
+	case len(daily) >= 3:
+		confidence = "medium"
+	default:
+		confidence = "low"
+	}
+	return
 }
 
 func defaultRouteInterfaces() map[string]struct{} {
@@ -234,6 +280,11 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.UsedBytes = 0
 		s.trafficState.LastSent = sent
 		s.trafficState.LastRecv = received
+		s.trafficState.DailyTraffic = make(map[string]uint64)
+		forcePersist = true
+	}
+	if s.trafficState.DailyTraffic == nil {
+		s.trafficState.DailyTraffic = make(map[string]uint64)
 		forcePersist = true
 	}
 
@@ -245,6 +296,7 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.UsedBytes = 0
 		s.trafficState.LastSent = sent
 		s.trafficState.LastRecv = received
+		s.trafficState.DailyTraffic = make(map[string]uint64)
 		s.trafficSnapshot = MonthlyTraffic{
 			Enabled:     false,
 			ResetDay:    s.trafficResetDay,
@@ -258,13 +310,21 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 			s.trafficState.LastRecv = received
 			forcePersist = true
 		} else {
-			s.trafficState.UsedBytes += trafficCounterDelta(sent, s.trafficState.LastSent)
-			s.trafficState.UsedBytes += trafficCounterDelta(received, s.trafficState.LastRecv)
+			delta := trafficCounterDelta(sent, s.trafficState.LastSent) + trafficCounterDelta(received, s.trafficState.LastRecv)
+			s.trafficState.UsedBytes += delta
+			s.trafficState.DailyTraffic[localNow.Format("2006-01-02")] += delta
 			s.trafficState.LastSent = sent
 			s.trafficState.LastRecv = received
 		}
+		dateKey := localNow.Format("2006-01-02")
+		if _, ok := s.trafficState.DailyTraffic[dateKey]; !ok {
+			s.trafficState.DailyTraffic[dateKey] = 0
+			forcePersist = true
+		}
 
 		limit := uint64(s.trafficLimitGB) * bytesPerGB
+		nextReset := trafficNextReset(periodStart, s.trafficResetDay)
+		averageDaily, projected, confidence := trafficForecast(s.trafficState.UsedBytes, s.trafficState.DailyTraffic, localNow, nextReset)
 		remaining := uint64(0)
 		if s.trafficState.UsedBytes < limit {
 			remaining = limit - s.trafficState.UsedBytes
@@ -277,14 +337,18 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 			}
 		}
 		s.trafficSnapshot = MonthlyTraffic{
-			Enabled:     true,
-			Limit:       limit,
-			Used:        s.trafficState.UsedBytes,
-			Remaining:   remaining,
-			Percent:     percent,
-			ResetDay:    s.trafficResetDay,
-			PeriodStart: periodStart,
-			NextReset:   trafficNextReset(periodStart, s.trafficResetDay),
+			Enabled:            true,
+			Limit:              limit,
+			Used:               s.trafficState.UsedBytes,
+			Remaining:          remaining,
+			Percent:            percent,
+			ResetDay:           s.trafficResetDay,
+			PeriodStart:        periodStart,
+			NextReset:          nextReset,
+			Daily:              trafficDailySeries(s.trafficState.DailyTraffic),
+			AverageDaily:       averageDaily,
+			ProjectedPeriodEnd: projected,
+			ForecastConfidence: confidence,
 		}
 	}
 
