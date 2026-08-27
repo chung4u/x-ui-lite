@@ -4,7 +4,7 @@
     <span>系统状态</span>
 </a-menu-item>
 <a-menu-item key="{{ .base_path }}xui/inbounds">
-    <a-icon type="user"></a-icon>
+    <a-icon type="cluster"></a-icon>
     <span>入站列表</span>
 </a-menu-item>
 <a-menu-item key="{{ .base_path }}xui/setting">
@@ -17,12 +17,12 @@
 <!--</a-menu-item>-->
 <a-sub-menu>
     <template slot="title">
-        <a-icon type="link"></a-icon>
-        <span>其他</span>
+        <a-icon type="more"></a-icon>
+        <span>项目资源</span>
     </template>
-    <a-menu-item key="https://github.com/vaxilu/x-ui/">
+    <a-menu-item key="https://github.com/FranzKafkaYu/x-ui/">
         <a-icon type="github"></a-icon>
-        <span>Github</span>
+        <span>GitHub 仓库</span>
     </a-menu-item>
 </a-sub-menu>
 <a-menu-item key="{{ .base_path }}logout">
@@ -33,11 +33,23 @@
 
 
 {{define "commonSider"}}
-<a-layout-sider id="sider" collapsible breakpoint="md" collapsed-width="0">
+<a-layout-sider id="sider" :width="236" collapsible breakpoint="md" collapsed-width="0">
+    <div class="sider-brand">
+        <div class="brand-mark">X</div>
+        <div class="brand-copy">
+            <div class="brand-name">X-UI</div>
+            <div class="brand-caption">CONTROL PANEL</div>
+        </div>
+    </div>
+    <div class="sider-nav-label">工作台</div>
     <a-menu theme="dark" mode="inline" :selected-keys="['{{ .request_uri }}']"
             @click="({key}) => key.startsWith('http') ? window.open(key) : location.href = key">
         {{template "menuItems" .}}
     </a-menu>
+    <div class="sider-footer">
+        <a-icon type="safety-certificate"></a-icon>
+        安全连接 · Xray 控制面板
+    </div>
 </a-layout-sider>
 <a-drawer id="sider-drawer" placement="left" :closable="false"
           @close="siderDrawer.close()"
@@ -45,7 +57,15 @@
     <div class="drawer-handle" @click="siderDrawer.change()" slot="handle">
         <a-icon :type="siderDrawer.visible ? 'close' : 'menu-fold'"></a-icon>
     </div>
-    <a-menu theme="light" mode="inline" :selected-keys="['{{ .request_uri }}']"
+    <div class="sider-brand">
+        <div class="brand-mark">X</div>
+        <div class="brand-copy">
+            <div class="brand-name">X-UI</div>
+            <div class="brand-caption">CONTROL PANEL</div>
+        </div>
+    </div>
+    <div class="sider-nav-label">工作台</div>
+    <a-menu theme="dark" mode="inline" :selected-keys="['{{ .request_uri }}']"
         @click="({key}) => key.startsWith('http') ? window.open(key) : location.href = key">
         {{template "menuItems" .}}
     </a-menu>

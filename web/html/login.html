@@ -1,72 +1,68 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 {{template "head" .}}
-<style>
-
-    #app {
-        padding-top: 100px;
-    }
-
-    h1 {
-        text-align: center;
-        color: #fff;
-        margin: 20px 0 50px 0;
-    }
-
-    .ant-btn, .ant-input {
-        height: 50px;
-        border-radius: 30px;
-    }
-
-    .ant-input-affix-wrapper .ant-input-prefix {
-        left: 23px;
-    }
-
-    .ant-input-affix-wrapper .ant-input:not(:first-child) {
-        padding-left: 50px;
-    }
-
-</style>
-<body>
-<a-layout id="app" v-cloak>
+<body class="login-page">
+<a-layout id="app" class="login-layout" v-cloak>
     <transition name="list" appear>
-        <a-layout-content>
-            <a-row type="flex" justify="center">
-                <a-col :xs="22" :sm="20" :md="16" :lg="12" :xl="8">
-                    <h1>{{ .title }}</h1>
-                </a-col>
-            </a-row>
-            <a-row type="flex" justify="center">
-                <a-col :xs="22" :sm="20" :md="16" :lg="12" :xl="8">
-                    <a-form>
+        <main class="login-grid">
+            <section class="login-intro" aria-label="X-UI 控制面板介绍">
+                <div class="login-brand">
+                    <div class="brand-mark">X</div>
+                    <div class="login-brand-name">X-UI Control</div>
+                </div>
+                <div class="login-kicker">SECURE NODE MANAGEMENT</div>
+                <h1 class="login-headline">
+                    清晰掌控运行状态
+                    <span>轻松管理每个节点</span>
+                </h1>
+                <p class="login-description">
+                    集中查看服务器资源、Xray 运行情况与入站配置，让日常运维更直观、更高效。
+                </p>
+                <div class="login-features" aria-label="核心能力">
+                    <span class="login-feature"><a-icon type="dashboard"></a-icon> 实时状态</span>
+                    <span class="login-feature"><a-icon type="cluster"></a-icon> 入站管理</span>
+                    <span class="login-feature"><a-icon type="safety-certificate"></a-icon> 安全访问</span>
+                </div>
+            </section>
+            <section class="login-panel" aria-label="登录表单">
+                <div class="login-card">
+                    <div class="login-card-kicker">Welcome back</div>
+                    <h2 class="login-title">欢迎回来</h2>
+                    <p class="login-subtitle">请输入管理账号，继续访问控制面板。</p>
+                    <a-form @submit.native.prevent="login">
                         <a-form-item>
-                            <a-input v-model.trim="user.username" placeholder='{{ i18n "username" }}'
+                            <a-input v-model.trim="user.username" name="username" autocomplete="username"
+                                     placeholder="用户名" aria-label="用户名"
                                      @keydown.enter.native="login" autofocus>
-                                <a-icon slot="prefix" type="user" style="color: rgba(0,0,0,.25)"/>
+                                <a-icon slot="prefix" type="user"></a-icon>
                             </a-input>
                         </a-form-item>
                         <a-form-item>
-                            <a-input type="password" v-model.trim="user.password"
-                                     placeholder='{{ i18n "password" }}' @keydown.enter.native="login">
-                                <a-icon slot="prefix" type="lock" style="color: rgba(0,0,0,.25)"/>
+                            <a-input type="password" v-model.trim="user.password" name="password"
+                                     autocomplete="current-password" placeholder="密码"
+                                     aria-label="密码" @keydown.enter.native="login">
+                                <a-icon slot="prefix" type="lock"></a-icon>
                             </a-input>
                         </a-form-item>
                         <a-form-item>
-                            <a-button block @click="login" :loading="loading">{{ i18n "login" }}</a-button>
+                            <a-button type="primary" html-type="submit" block :loading="loading">
+                                <a-icon v-if="!loading" type="login"></a-icon>
+                                登录控制台
+                            </a-button>
                         </a-form-item>
                     </a-form>
-                </a-col>
-            </a-row>
-        </a-layout-content>
+                    <div class="login-security">
+                        <a-icon type="safety-certificate"></a-icon>
+                        连接已加密，请妥善保管管理凭据
+                    </div>
+                </div>
+                <div class="login-copyright">X-UI · SECURE CONTROL PANEL</div>
+            </section>
+        </main>
     </transition>
 </a-layout>
 {{template "js" .}}
 <script>
-    const leftColor = RandomUtil.randomIntRange(0x222222, 0xFFFFFF / 2).toString(16);
-    const rightColor = RandomUtil.randomIntRange(0xFFFFFF / 2, 0xDDDDDD).toString(16);
-    const deg = RandomUtil.randomIntRange(0, 360);
-    const background = `linear-gradient(${deg}deg, #${leftColor} 10%, #${rightColor} 100%)`;
-    document.querySelector('#app').style.background = background;
     const app = new Vue({
         delimiters: ['[[', ']]'],
         el: '#app',
@@ -76,6 +72,9 @@
         },
         methods: {
             async login() {
+                if (this.loading) {
+                    return;
+                }
                 this.loading = true;
                 const msg = await HttpUtil.post('/login', this.user);
                 this.loading = false;

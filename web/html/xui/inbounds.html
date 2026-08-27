@@ -1,118 +1,143 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 {{template "head" .}}
-<style>
-    @media (min-width: 769px) {
-        .ant-layout-content {
-            margin: 24px 16px;
-        }
-    }
-
-    .ant-col-sm-24 {
-        margin-top: 10px;
-    }
-</style>
 <body>
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
         <a-layout-content>
-            <a-spin :spinning="spinning" :delay="500" tip="loading">
-                <transition name="list" appear>
-                    <a-tag v-if="false" color="red" style="margin-bottom: 10px">
-                        Please go to the panel settings as soon as possible to modify the username and password, otherwise there may be a risk of leaking account information
-                    </a-tag>
-                </transition>
-                <transition name="list" appear>
-                    <a-card hoverable style="margin-bottom: 20px;">
-                        <a-row>
-                            <a-col :xs="24" :sm="24" :lg="12">
-                                总上传 / 下载：
-                                <a-tag color="green">[[ sizeFormat(total.up) ]] / [[ sizeFormat(total.down) ]]</a-tag>
-                            </a-col>
-                            <a-col :xs="24" :sm="24" :lg="12">
-                                总用量：
-                                <a-tag color="green">[[ sizeFormat(total.up + total.down) ]]</a-tag>
-                            </a-col>
-                            <a-col :xs="24" :sm="24" :lg="12">
-                                入站数量：
-                                <a-tag color="green">[[ dbInbounds.length ]]</a-tag>
-                            </a-col>
-                        </a-row>
-                    </a-card>
-                </transition>
-                <transition name="list" appear>
-                    <a-card hoverable>
-                        <div slot="title">
-                            <a-button type="primary" icon="plus" @click="openAddInbound"></a-button>
-                        </div>
-<!--                        <a-input v-model="searchKey" placeholder="搜索" autofocus style="max-width: 300px"></a-input>-->
-                        <a-table :columns="columns" :row-key="dbInbound => dbInbound.id"
-                                 :data-source="dbInbounds"
-                                 :loading="spinning" :scroll="{ x: 1500 }"
-                                 :pagination="false"
-                                 style="margin-top: 20px"
-                                 @change="() => getDBInbounds()">
-                            <template slot="action" slot-scope="text, dbInbound">
-                                <a-dropdown :trigger="['click']">
-                                    <a @click="e => e.preventDefault()">操作</a>
-                                    <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
-                                        <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
-                                            <a-icon type="qrcode"></a-icon>二维码
-                                        </a-menu-item>
-                                        <a-menu-item key="edit">
-                                            <a-icon type="edit"></a-icon>编辑
-                                        </a-menu-item>
-                                        <a-menu-item key="resetTraffic">
-                                            <a-icon type="retweet"></a-icon>重置流量
-                                        </a-menu-item>
-                                        <a-menu-item key="delete">
-                                            <span style="color: #FF4D4F">
-                                                <a-icon type="delete"></a-icon>删除
-                                            </span>
-                                        </a-menu-item>
-                                    </a-menu>
-                                </a-dropdown>
-                            </template>
-                            <template slot="protocol" slot-scope="text, dbInbound">
-                                <a-tag color="blue">[[ dbInbound.protocol ]]</a-tag>
-                            </template>
-                            <template slot="traffic" slot-scope="text, dbInbound">
-                                <a-tag color="blue">[[ sizeFormat(dbInbound.up) ]] / [[ sizeFormat(dbInbound.down) ]]</a-tag>
-                                <template v-if="dbInbound.total > 0">
-                                    <a-tag v-if="dbInbound.up + dbInbound.down < dbInbound.total" color="cyan">[[ sizeFormat(dbInbound.total) ]]</a-tag>
-                                    <a-tag v-else color="red">[[ sizeFormat(dbInbound.total) ]]</a-tag>
+            <a-spin :spinning="spinning" :delay="500" tip="正在加载入站配置">
+                <div class="page-shell">
+                    <transition name="list" appear>
+                        <header class="page-header">
+                            <div>
+                                <div class="page-eyebrow">Inbound management</div>
+                                <h1 class="page-title">入站列表</h1>
+                                <p class="page-subtitle">集中查看端口、协议、传输方式与流量使用情况，管理所有 Xray 入站配置。</p>
+                            </div>
+                            <div class="page-actions">
+                                <a-button type="primary" icon="plus" @click="openAddInbound">添加入站</a-button>
+                            </div>
+                        </header>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <section aria-label="流量概览">
+                            <a-row :gutter="16">
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon"><a-icon type="cloud-upload"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">累计上传</div>
+                                            <div class="overview-value">[[ sizeFormat(total.up) ]]</div>
+                                            <div class="overview-meta">全部入站</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon violet"><a-icon type="cloud-download"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">累计下载</div>
+                                            <div class="overview-value">[[ sizeFormat(total.down) ]]</div>
+                                            <div class="overview-meta">全部入站</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon success"><a-icon type="bar-chart"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">总流量</div>
+                                            <div class="overview-value">[[ sizeFormat(total.up + total.down) ]]</div>
+                                            <div class="overview-meta">上传与下载合计</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon warning"><a-icon type="cluster"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">入站数量</div>
+                                            <div class="overview-value">[[ dbInbounds.length ]]</div>
+                                            <div class="overview-meta">当前配置总数</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                            </a-row>
+                        </section>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <a-card class="table-card" hoverable>
+                            <div class="table-toolbar">
+                                <div>
+                                    <h2 class="section-title"><a-icon type="unordered-list"></a-icon>配置明细</h2>
+                                    <div class="table-toolbar-copy">启用、编辑或查看每一条入站配置</div>
+                                </div>
+                                <a-button type="primary" icon="plus" @click="openAddInbound">添加入站</a-button>
+                            </div>
+                            <a-table :columns="columns" :row-key="dbInbound => dbInbound.id"
+                                     :data-source="dbInbounds" :loading="spinning"
+                                     :scroll="{ x: 1226 }" :pagination="false"
+                                     @change="() => getDBInbounds()">
+                                <template slot="action" slot-scope="text, dbInbound">
+                                    <a-dropdown :trigger="['click']">
+                                        <a-button size="small" @click="e => e.preventDefault()">
+                                            管理 <a-icon type="down"></a-icon>
+                                        </a-button>
+                                        <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
+                                            <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
+                                                <a-icon type="qrcode"></a-icon>二维码
+                                            </a-menu-item>
+                                            <a-menu-item key="edit">
+                                                <a-icon type="edit"></a-icon>编辑配置
+                                            </a-menu-item>
+                                            <a-menu-item key="resetTraffic">
+                                                <a-icon type="retweet"></a-icon>重置流量
+                                            </a-menu-item>
+                                            <a-menu-item key="delete">
+                                                <span style="color: #e45454"><a-icon type="delete"></a-icon>删除入站</span>
+                                            </a-menu-item>
+                                        </a-menu>
+                                    </a-dropdown>
                                 </template>
-                                <a-tag v-else color="green">无限制</a-tag>
-                            </template>
-                            <template slot="settings" slot-scope="text, dbInbound">
-                                <a-button type="link" @click="showInfo(dbInbound)">查看</a-button>
-                            </template>
-                            <template slot="stream" slot-scope="text, dbInbound, index">
-                                <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
-                                    <a-tag color="green">[[ inbounds[index].stream.network ]]</a-tag>
-                                    <a-tag v-if="inbounds[index].stream.isTls" color="blue">tls</a-tag>
-                                    <a-tag v-if="inbounds[index].stream.isXTls" color="blue">xtls</a-tag>
+                                <template slot="protocol" slot-scope="text, dbInbound">
+                                    <a-tag color="blue">[[ dbInbound.protocol ]]</a-tag>
                                 </template>
-                                <template v-else>无</template>
-                            </template>
-                            <template slot="enable" slot-scope="text, dbInbound">
-                                <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
-                            </template>
-                            <template slot="expiryTime" slot-scope="text, dbInbound">
-                                <template v-if="dbInbound.expiryTime > 0">
-                                    <a-tag v-if="dbInbound.isExpiry" color="red">
-                                        [[ DateUtil.formatMillis(dbInbound.expiryTime) ]]
-                                    </a-tag>
-                                    <a-tag v-else color="blue">
-                                        [[ DateUtil.formatMillis(dbInbound.expiryTime) ]]
-                                    </a-tag>
+                                <template slot="traffic" slot-scope="text, dbInbound">
+                                    <a-tag color="blue">↑ [[ sizeFormat(dbInbound.up) ]] · ↓ [[ sizeFormat(dbInbound.down) ]]</a-tag>
+                                    <template v-if="dbInbound.total > 0">
+                                        <a-tag v-if="dbInbound.up + dbInbound.down < dbInbound.total" color="cyan">限额 [[ sizeFormat(dbInbound.total) ]]</a-tag>
+                                        <a-tag v-else color="red">已用尽 [[ sizeFormat(dbInbound.total) ]]</a-tag>
+                                    </template>
+                                    <a-tag v-else color="green">无限制</a-tag>
                                 </template>
-                                <a-tag v-else color="green">无限期</a-tag>
-                            </template>
-                        </a-table>
-                    </a-card>
-                </transition>
+                                <template slot="settings" slot-scope="text, dbInbound">
+                                    <a-button type="link" @click="showInfo(dbInbound)">查看详情</a-button>
+                                </template>
+                                <template slot="stream" slot-scope="text, dbInbound, index">
+                                    <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
+                                        <a-tag color="green">[[ inbounds[index].stream.network ]]</a-tag>
+                                        <a-tag v-if="inbounds[index].stream.isTls" color="blue">TLS</a-tag>
+                                        <a-tag v-if="inbounds[index].stream.isXTls" color="blue">XTLS</a-tag>
+                                    </template>
+                                    <span v-else style="color: #8591a6">无</span>
+                                </template>
+                                <template slot="enable" slot-scope="text, dbInbound">
+                                    <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
+                                </template>
+                                <template slot="expiryTime" slot-scope="text, dbInbound">
+                                    <template v-if="dbInbound.expiryTime > 0">
+                                        <a-tag v-if="dbInbound.isExpiry" color="red">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
+                                        <a-tag v-else color="blue">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
+                                    </template>
+                                    <a-tag v-else color="green">无限期</a-tag>
+                                </template>
+                            </a-table>
+                        </a-card>
+                    </transition>
+                </div>
             </a-spin>
         </a-layout-content>
     </a-layout>
@@ -123,52 +148,52 @@
     const columns = [{
         title: "操作",
         align: 'center',
-        width: 30,
+        width: 88,
         scopedSlots: { customRender: 'action' },
     }, {
         title: "启用",
         align: 'center',
-        width: 40,
+        width: 72,
         scopedSlots: { customRender: 'enable' },
     }, {
-        title: "id",
+        title: "ID",
         align: 'center',
         dataIndex: "id",
-        width: 30,
+        width: 64,
     }, {
         title: "备注",
         align: 'center',
-        width: 100,
+        width: 160,
         dataIndex: "remark",
     }, {
         title: "协议",
         align: 'center',
-        width: 60,
+        width: 100,
         scopedSlots: { customRender: 'protocol' },
     }, {
         title: "端口",
         align: 'center',
         dataIndex: "port",
-        width: 60,
+        width: 90,
     }, {
-        title: "流量↑|↓",
+        title: "流量与限额",
         align: 'center',
-        width: 150,
+        width: 260,
         scopedSlots: { customRender: 'traffic' },
     }, {
         title: "详细信息",
         align: 'center',
-        width: 40,
+        width: 100,
         scopedSlots: { customRender: 'settings' },
     }, {
         title: "传输配置",
         align: 'center',
-        width: 60,
+        width: 160,
         scopedSlots: { customRender: 'stream' },
     }, {
         title: "到期时间",
         align: 'center',
-        width: 80,
+        width: 132,
         scopedSlots: { customRender: 'expiryTime' },
     }];
 

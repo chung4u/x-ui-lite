@@ -1,177 +1,168 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 {{template "head" .}}
-<style>
-    @media (min-width: 769px) {
-        .ant-layout-content {
-            margin: 24px 16px;
-        }
-    }
-
-    .ant-col-sm-24 {
-        margin-top: 10px;
-    }
-</style>
 <body>
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
         <a-layout-content>
-            <a-spin :spinning="spinning" :delay="200" :tip="loadingTip"/>
-            <transition name="list" appear>
-                <a-row>
-                    <a-card hoverable>
-                        <a-row>
-                            <a-col :sm="24" :md="12">
-                                <a-row>
-                                    <a-col :span="12" style="text-align: center">
-                                        <a-progress type="dashboard" status="normal"
-                                                    :stroke-color="status.cpu.color"
+            <a-spin :spinning="spinning" :delay="200" :tip="loadingTip">
+                <div class="page-shell">
+                    <transition name="list" appear>
+                        <header class="page-header">
+                            <div>
+                                <div class="page-eyebrow">Overview</div>
+                                <h1 class="page-title">系统状态</h1>
+                                <p class="page-subtitle">实时查看服务器资源、网络流量与 Xray 核心运行状态。</p>
+                            </div>
+                            <div class="page-actions">
+                                <div class="status-pill" v-if="status.xray.state === State.Running">
+                                    <span class="status-dot"></span>
+                                    服务运行正常
+                                </div>
+                                <a-tag v-else :color="status.xray.color">Xray [[ status.xray.state ]]</a-tag>
+                            </div>
+                        </header>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <section aria-label="资源使用情况">
+                            <a-row :gutter="16">
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="metric-card" hoverable>
+                                        <a-progress type="dashboard" status="normal" :width="122"
+                                                    :stroke-width="8" :stroke-color="status.cpu.color"
                                                     :percent="status.cpu.percent"></a-progress>
-                                        <div>CPU</div>
-                                    </a-col>
-                                    <a-col :span="12" style="text-align: center">
-                                        <a-progress type="dashboard" status="normal"
-                                                    :stroke-color="status.mem.color"
+                                        <div class="metric-label">处理器</div>
+                                        <div class="metric-detail">CPU 实时使用率</div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="metric-card" hoverable>
+                                        <a-progress type="dashboard" status="normal" :width="122"
+                                                    :stroke-width="8" :stroke-color="status.mem.color"
                                                     :percent="status.mem.percent"></a-progress>
-                                        <div>
-                                            内存: [[ sizeFormat(status.mem.current) ]] / [[ sizeFormat(status.mem.total) ]]
-                                        </div>
-                                    </a-col>
-                                </a-row>
-                            </a-col>
-                            <a-col :sm="24" :md="12">
-                                <a-row>
-                                    <a-col :span="12" style="text-align: center">
-                                        <a-progress type="dashboard" status="normal"
-                                                    :stroke-color="status.swap.color"
+                                        <div class="metric-label">运行内存</div>
+                                        <div class="metric-detail">[[ sizeFormat(status.mem.current) ]] / [[ sizeFormat(status.mem.total) ]]</div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="metric-card" hoverable>
+                                        <a-progress type="dashboard" status="normal" :width="122"
+                                                    :stroke-width="8" :stroke-color="status.swap.color"
                                                     :percent="status.swap.percent"></a-progress>
-                                        <div>
-                                            swap: [[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]
-                                        </div>
-                                    </a-col>
-                                    <a-col :span="12" style="text-align: center">
-                                        <a-progress type="dashboard" status="normal"
-                                                    :stroke-color="status.disk.color"
+                                        <div class="metric-label">交换空间</div>
+                                        <div class="metric-detail">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="metric-card" hoverable>
+                                        <a-progress type="dashboard" status="normal" :width="122"
+                                                    :stroke-width="8" :stroke-color="status.disk.color"
                                                     :percent="status.disk.percent"></a-progress>
-                                        <div>
-                                            硬盘: [[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]
+                                        <div class="metric-label">磁盘空间</div>
+                                        <div class="metric-detail">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
+                                    </a-card>
+                                </a-col>
+                            </a-row>
+                        </section>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <section aria-label="运行概览">
+                            <a-row :gutter="16">
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon success"><a-icon type="rocket"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">XRAY 核心</div>
+                                            <div class="overview-value">
+                                                <a-tag :color="status.xray.color">[[ status.xray.state ]]</a-tag>
+                                                <a-tooltip v-if="status.xray.state === State.Error">
+                                                    <template slot="title">
+                                                        <p v-for="line in status.xray.errorMsg.split('\n')">[[ line ]]</p>
+                                                    </template>
+                                                    <a-icon type="question-circle" theme="filled"></a-icon>
+                                                </a-tooltip>
+                                            </div>
+                                            <div class="overview-meta">
+                                                [[ status.xray.version || '正在获取版本' ]]
+                                                <a @click="openSelectV2rayVersion"> · 切换版本</a>
+                                            </div>
                                         </div>
-                                    </a-col>
-                                </a-row>
-                            </a-col>
-                        </a-row>
-                    </a-card>
-                </a-row>
-            </transition>
-            <transition name="list" appear>
-                <a-row>
-                    <a-col :sm="24" :md="12">
-                        <a-card hoverable>
-                            xray 状态:
-                            <a-tag :color="status.xray.color">[[ status.xray.state ]]</a-tag>
-                            <a-tooltip v-if="status.xray.state === State.Error">
-                                <template slot="title">
-                                    <p v-for="line in status.xray.errorMsg.split('\n')">[[ line ]]</p>
-                                </template>
-                                <a-icon type="question-circle" theme="filled"></a-icon>
-                            </a-tooltip>
-                            <a-tag color="green" @click="openSelectV2rayVersion">[[ status.xray.version ]]</a-tag>
-                            <a-tag color="blue" @click="openSelectV2rayVersion">切换版本</a-tag>
-                        </a-card>
-                    </a-col>
-                    <a-col :sm="24" :md="12">
-                        <a-card hoverable>
-                            运行时间:
-                            <a-tag color="#87d068">[[ formatSecond(status.uptime) ]]</a-tag>
-                            <a-tooltip>
-                                <template slot="title">
-                                    系统自启动以来的运行时间
-                                </template>
-                                <a-icon type="question-circle" theme="filled"></a-icon>
-                            </a-tooltip>
-                        </a-card>
-                    </a-col>
-                    <a-col :sm="24" :md="12">
-                        <a-card hoverable>
-                            系统负载: [[ status.loads[0] ]] | [[ status.loads[1] ]] | [[ status.loads[2] ]]
-                        </a-card>
-                    </a-col>
-                    <a-col :sm="24" :md="12">
-                        <a-card hoverable>
-                            tcp / udp 连接数: [[ status.tcpCount ]] / [[ status.udpCount ]]
-                            <a-tooltip>
-                                <template slot="title">
-                                    所有网卡的总连接数
-                                </template>
-                                <a-icon type="question-circle" theme="filled"></a-icon>
-                            </a-tooltip>
-                        </a-card>
-                    </a-col>
-                    <a-col :sm="24" :md="12">
-                        <a-card hoverable>
-                            <a-row>
-                                <a-col :span="12">
-                                    <a-icon type="arrow-up"></a-icon>
-                                    [[ sizeFormat(status.netIO.up) ]] / S
-                                    <a-tooltip>
-                                        <template slot="title">
-                                            所有网卡的总上传速度
-                                        </template>
-                                        <a-icon type="question-circle" theme="filled"></a-icon>
-                                    </a-tooltip>
+                                    </a-card>
                                 </a-col>
-                                <a-col :span="12">
-                                    <a-icon type="arrow-down"></a-icon>
-                                    [[ sizeFormat(status.netIO.down) ]] / S
-                                    <a-tooltip>
-                                        <template slot="title">
-                                            所有网卡的总下载速度
-                                        </template>
-                                        <a-icon type="question-circle" theme="filled"></a-icon>
-                                    </a-tooltip>
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon"><a-icon type="clock-circle"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">系统运行时间</div>
+                                            <div class="overview-value">[[ formatSecond(status.uptime) ]]</div>
+                                            <div class="overview-meta">自本次系统启动后累计</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon warning"><a-icon type="fund"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">系统负载</div>
+                                            <div class="overview-value">[[ status.loads[0] ]] · [[ status.loads[1] ]] · [[ status.loads[2] ]]</div>
+                                            <div class="overview-meta">1 分钟 / 5 分钟 / 15 分钟</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon violet"><a-icon type="global"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">网络连接</div>
+                                            <div class="overview-value">[[ status.tcpCount ]] TCP · [[ status.udpCount ]] UDP</div>
+                                            <div class="overview-meta">所有网卡当前连接总数</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon"><a-icon type="swap"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">实时网速</div>
+                                            <div class="overview-value split-value">
+                                                <span class="split-value-item"><a-icon type="arrow-up"></a-icon>[[ sizeFormat(status.netIO.up) ]]/s</span>
+                                                <span class="split-value-item"><a-icon type="arrow-down"></a-icon>[[ sizeFormat(status.netIO.down) ]]/s</span>
+                                            </div>
+                                            <div class="overview-meta">上传 / 下载</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon success"><a-icon type="cloud"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">累计流量</div>
+                                            <div class="overview-value split-value">
+                                                <span class="split-value-item"><a-icon type="cloud-upload"></a-icon>[[ sizeFormat(status.netTraffic.sent) ]]</span>
+                                                <span class="split-value-item"><a-icon type="cloud-download"></a-icon>[[ sizeFormat(status.netTraffic.recv) ]]</span>
+                                            </div>
+                                            <div class="overview-meta">系统启动以来上传 / 下载</div>
+                                        </div>
+                                    </a-card>
                                 </a-col>
                             </a-row>
-                        </a-card>
-                    </a-col>
-                    <a-col :sm="24" :md="12">
-                        <a-card hoverable>
-                            <a-row>
-                                <a-col :span="12">
-                                    <a-icon type="cloud-upload"></a-icon>
-                                    [[ sizeFormat(status.netTraffic.sent) ]]
-                                    <a-tooltip>
-                                        <template slot="title">
-                                            系统启动以来所有网卡的总上传流量
-                                        </template>
-                                        <a-icon type="question-circle" theme="filled"></a-icon>
-                                    </a-tooltip>
-                                </a-col>
-                                <a-col :span="12">
-                                    <a-icon type="cloud-download"></a-icon>
-                                    [[ sizeFormat(status.netTraffic.recv) ]]
-                                    <a-tooltip>
-                                        <template slot="title">
-                                            系统启动以来所有网卡的总下载流量
-                                        </template>
-                                        <a-icon type="question-circle" theme="filled"></a-icon>
-                                    </a-tooltip>
-                                </a-col>
-                            </a-row>
-                        </a-card>
-                    </a-col>
-                </a-row>
-            </transition>
+                        </section>
+                    </transition>
+                </div>
+            </a-spin>
         </a-layout-content>
     </a-layout>
-    <a-modal id="version-modal" v-model="versionModal.visible" title="切换版本"
+    <a-modal id="version-modal" v-model="versionModal.visible" title="切换 Xray 版本"
              :closable="true" @ok="() => versionModal.visible = false"
-             ok-text="确定" cancel-text="取消">
-        <h2>点击你想切换的版本</h2>
-        <h2>请谨慎选择，旧版本可能配置不兼容</h2>
+             ok-text="完成" cancel-text="取消">
+        <p style="color: #49566d; margin-bottom: 6px">请选择需要安装的 Xray 版本。</p>
+        <p style="color: #e29a28; margin-bottom: 18px"><a-icon type="warning"></a-icon> 旧版本可能与现有配置不兼容，请谨慎操作。</p>
         <template v-for="version, index in versionModal.versions">
             <a-tag :color="index % 2 == 0 ? 'blue' : 'green'"
-                   style="margin: 10px" @click="switchV2rayVersion(version)">
+                   style="margin: 6px; cursor: pointer" @click="switchV2rayVersion(version)">
                 [[ version ]]
             </a-tag>
         </template>

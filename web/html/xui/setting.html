@@ -1,83 +1,72 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 {{template "head" .}}
-<style>
-    @media (min-width: 769px) {
-        .ant-layout-content {
-            margin: 24px 16px;
-        }
-    }
-
-    .ant-col-sm-24 {
-        margin-top: 10px;
-    }
-
-    .ant-tabs-bar {
-        margin: 0;
-    }
-
-    .ant-list-item {
-        display: block;
-    }
-
-    .ant-tabs-top-bar {
-        background: white;
-    }
-</style>
 <body>
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
         <a-layout-content>
-            <a-spin :spinning="spinning" :delay="500" tip="loading">
-                <a-space direction="vertical">
-                    <a-space direction="horizontal">
-                        <a-button type="primary" :disabled="saveBtnDisable" @click="updateAllSetting">保存配置</a-button>
-                        <a-button type="danger" :disabled="!saveBtnDisable" @click="restartPanel">重启面板</a-button>
-                    </a-space>
-                    <a-tabs default-active-key="1">
-                        <a-tab-pane key="1" tab="面板配置">
-                            <a-list item-layout="horizontal" style="background: white">
-                                <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，重启面板生效" v-model="allSetting.webListen"></setting-list-item>
-                                <setting-list-item type="number" title="面板监听端口" desc="重启面板生效" v-model.number="allSetting.webPort"></setting-list-item>
-                                <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写一个 '/' 开头的绝对路径，重启面板生效" v-model="allSetting.webCertFile"></setting-list-item>
-                                <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写一个 '/' 开头的绝对路径，重启面板生效" v-model="allSetting.webKeyFile"></setting-list-item>
-                                <setting-list-item type="text" title="面板 url 根路径" desc="必须以 '/' 开头，以 '/' 结尾，重启面板生效" v-model="allSetting.webBasePath"></setting-list-item>
-                            </a-list>
-                        </a-tab-pane>
-                        <a-tab-pane key="2" tab="用户设置">
-                            <a-form style="background: white; padding: 20px">
-                                <a-form-item label="原用户名">
-                                    <a-input v-model="user.oldUsername" style="max-width: 300px"></a-input>
-                                </a-form-item>
-                                <a-form-item label="原密码">
-                                    <a-input type="password" v-model="user.oldPassword"
-                                             style="max-width: 300px"></a-input>
-                                </a-form-item>
-                                <a-form-item label="新用户名">
-                                    <a-input v-model="user.newUsername" style="max-width: 300px"></a-input>
-                                </a-form-item>
-                                <a-form-item label="新密码">
-                                    <a-input type="password" v-model="user.newPassword"
-                                             style="max-width: 300px"></a-input>
-                                </a-form-item>
-                                <a-form-item>
-                                    <a-button type="primary" @click="updateUser">修改</a-button>
-                                </a-form-item>
-                            </a-form>
-                        </a-tab-pane>
-                        <a-tab-pane key="3" tab="xray 相关设置">
-                            <a-list item-layout="horizontal" style="background: white">
-                                <setting-list-item type="textarea" title="xray 配置模版" desc="以该模版为基础生成最终的 xray 配置文件，重启面板生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
-                            </a-list>
-                        </a-tab-pane>
-                        <a-tab-pane key="4" tab="其他设置">
-                            <a-list item-layout="horizontal" style="background: white">
-                                <setting-list-item type="text" title="时区" desc="定时任务按照该时区的时间运行，重启面板生效" v-model="allSetting.timeLocation"></setting-list-item>
-                            </a-list>
-                        </a-tab-pane>
-                    </a-tabs>
-                </a-space>
+            <a-spin :spinning="spinning" :delay="500" tip="正在加载面板配置">
+                <div class="page-shell">
+                    <transition name="list" appear>
+                        <header class="page-header">
+                            <div>
+                                <div class="page-eyebrow">Panel settings</div>
+                                <h1 class="page-title">面板设置</h1>
+                                <p class="page-subtitle">管理访问方式、管理员账号与 Xray 模板。带有“重启生效”的项目保存后需要重启面板。</p>
+                            </div>
+                            <div class="page-actions">
+                                <a-button type="primary" icon="save" :disabled="saveBtnDisable" @click="updateAllSetting">保存配置</a-button>
+                                <a-button type="danger" icon="poweroff" :disabled="!saveBtnDisable" @click="restartPanel">重启面板</a-button>
+                            </div>
+                        </header>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <a-card class="settings-card" hoverable>
+                            <a-tabs default-active-key="1">
+                                <a-tab-pane key="1" tab="面板配置">
+                                    <a-list class="setting-list" item-layout="horizontal">
+                                        <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，保存并重启面板后生效" v-model="allSetting.webListen"></setting-list-item>
+                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口，保存并重启面板后生效" v-model.number="allSetting.webPort"></setting-list-item>
+                                        <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webCertFile"></setting-list-item>
+                                        <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webKeyFile"></setting-list-item>
+                                        <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾，保存并重启面板后生效" v-model="allSetting.webBasePath"></setting-list-item>
+                                    </a-list>
+                                </a-tab-pane>
+                                <a-tab-pane key="2" tab="用户设置">
+                                    <a-form class="settings-user-form" @submit.native.prevent="updateUser">
+                                        <a-form-item label="原用户名">
+                                            <a-input v-model="user.oldUsername" name="old-username" autocomplete="username"></a-input>
+                                        </a-form-item>
+                                        <a-form-item label="原密码">
+                                            <a-input type="password" v-model="user.oldPassword" name="old-password" autocomplete="current-password"></a-input>
+                                        </a-form-item>
+                                        <a-form-item label="新用户名">
+                                            <a-input v-model="user.newUsername" name="new-username" autocomplete="off"></a-input>
+                                        </a-form-item>
+                                        <a-form-item label="新密码">
+                                            <a-input type="password" v-model="user.newPassword" name="new-password" autocomplete="new-password"></a-input>
+                                        </a-form-item>
+                                        <a-form-item style="margin-bottom: 0">
+                                            <a-button type="primary" html-type="submit" icon="user">更新管理员账号</a-button>
+                                        </a-form-item>
+                                    </a-form>
+                                </a-tab-pane>
+                                <a-tab-pane key="3" tab="Xray 设置">
+                                    <a-list class="setting-list" item-layout="horizontal">
+                                        <setting-list-item type="textarea" title="Xray 配置模板" desc="系统会基于此模板生成最终配置，保存并重启面板后生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
+                                    </a-list>
+                                </a-tab-pane>
+                                <a-tab-pane key="4" tab="其他设置">
+                                    <a-list class="setting-list" item-layout="horizontal">
+                                        <setting-list-item type="text" title="时区" desc="定时任务将按照该时区运行，保存并重启面板后生效" v-model="allSetting.timeLocation"></setting-list-item>
+                                    </a-list>
+                                </a-tab-pane>
+                            </a-tabs>
+                        </a-card>
+                    </transition>
+                </div>
             </a-spin>
         </a-layout-content>
     </a-layout>

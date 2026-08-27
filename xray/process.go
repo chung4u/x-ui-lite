@@ -22,6 +22,14 @@ import (
 
 var trafficRegex = regexp.MustCompile("(inbound|outbound)>>>([^>]+)>>>traffic>>>(downlink|uplink)")
 
+func parseTrafficName(name string) (isInbound bool, tag string, isDown bool, ok bool) {
+	matchs := trafficRegex.FindStringSubmatch(name)
+	if len(matchs) != 4 {
+		return false, "", false, false
+	}
+	return matchs[1] == "inbound", matchs[2], matchs[3] == "downlink", true
+}
+
 func GetBinaryName() string {
 	return fmt.Sprintf("xray-%s-%s", runtime.GOOS, runtime.GOARCH)
 }
@@ -251,10 +259,10 @@ func (p *process) GetTraffic(reset bool) ([]*Traffic, error) {
 	tagTrafficMap := map[string]*Traffic{}
 	traffics := make([]*Traffic, 0)
 	for _, stat := range resp.GetStat() {
-		matchs := trafficRegex.FindStringSubmatch(stat.Name)
-		isInbound := matchs[1] == "inbound"
-		tag := matchs[2]
-		isDown := matchs[3] == "downlink"
+		isInbound, tag, isDown, ok := parseTrafficName(stat.Name)
+		if !ok {
+			continue
+		}
 		if tag == "api" {
 			continue
 		}
