@@ -34,6 +34,31 @@
                     </transition>
 
                     <transition name="list" appear>
+                        <section class="health-banner" :class="healthState" aria-live="polite" aria-label="运行健康概览">
+                            <div class="health-banner-main">
+                                <div class="health-banner-icon">
+                                    <a-icon :type="healthState === 'success' ? 'check-circle' : (healthState === 'neutral' ? 'sync' : 'warning')"
+                                            :spin="healthState === 'neutral'"></a-icon>
+                                </div>
+                                <div>
+                                    <div class="health-banner-label">运行健康</div>
+                                    <h2>[[ healthTitle ]]</h2>
+                                    <p>[[ healthSummary ]]</p>
+                                </div>
+                            </div>
+                            <div class="health-issue-list" v-if="healthIssues.length > 0">
+                                <a-tag v-for="issue in healthIssues" :key="issue.key" :color="issue.color"
+                                       :class="{ 'health-issue-link': issue.href }" @click="openHealthIssue(issue)">
+                                    [[ issue.label ]]
+                                </a-tag>
+                            </div>
+                            <div class="health-issue-list" v-else>
+                                <a-tag color="green">关键指标正常</a-tag>
+                            </div>
+                        </section>
+                    </transition>
+
+                    <transition name="list" appear>
                         <section aria-label="资源使用情况">
                             <a-row :gutter="16">
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
@@ -45,6 +70,9 @@
                                         <div class="resource-label">处理器</div>
                                         <a-progress :show-info="false" :stroke-width="7"
                                                     :stroke-color="status.cpu.color" :percent="status.cpu.percent"></a-progress>
+                                        <svg class="resource-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                                            <polyline :points="sparklinePoints('cpu')"></polyline>
+                                        </svg>
                                         <div class="resource-detail">CPU 实时使用率</div>
                                     </a-card>
                                 </a-col>
@@ -57,6 +85,9 @@
                                         <div class="resource-label">运行内存</div>
                                         <a-progress :show-info="false" :stroke-width="7"
                                                     :stroke-color="status.mem.color" :percent="status.mem.percent"></a-progress>
+                                        <svg class="resource-sparkline success" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                                            <polyline :points="sparklinePoints('mem')"></polyline>
+                                        </svg>
                                         <div class="resource-detail">[[ sizeFormat(status.mem.current) ]] / [[ sizeFormat(status.mem.total) ]]</div>
                                     </a-card>
                                 </a-col>
@@ -69,6 +100,9 @@
                                         <div class="resource-label">交换空间</div>
                                         <a-progress :show-info="false" :stroke-width="7"
                                                     :stroke-color="status.swap.color" :percent="status.swap.percent"></a-progress>
+                                        <svg class="resource-sparkline violet" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                                            <polyline :points="sparklinePoints('swap')"></polyline>
+                                        </svg>
                                         <div class="resource-detail">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
                                     </a-card>
                                 </a-col>
@@ -81,10 +115,46 @@
                                         <div class="resource-label">磁盘空间</div>
                                         <a-progress :show-info="false" :stroke-width="7"
                                                     :stroke-color="status.disk.color" :percent="status.disk.percent"></a-progress>
+                                        <svg class="resource-sparkline warning" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                                            <polyline :points="sparklinePoints('disk')"></polyline>
+                                        </svg>
                                         <div class="resource-detail">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
                                     </a-card>
                                 </a-col>
                             </a-row>
+                        </section>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <section class="monthly-traffic-card" :class="{ disabled: !status.monthlyTraffic.enabled }"
+                                 aria-label="VPS 月度流量">
+                            <div class="monthly-traffic-heading">
+                                <div class="monthly-traffic-icon"><a-icon type="cloud-server"></a-icon></div>
+                                <div>
+                                    <div class="monthly-traffic-eyebrow">VPS 月度流量</div>
+                                    <h2 v-if="status.monthlyTraffic.enabled">剩余 [[ sizeFormat(status.monthlyTraffic.remaining) ]]</h2>
+                                    <h2 v-else>尚未设置月度额度</h2>
+                                    <p v-if="status.monthlyTraffic.enabled">
+                                        本周期已用 [[ sizeFormat(status.monthlyTraffic.used) ]] / [[ sizeFormat(status.monthlyTraffic.limit) ]]
+                                    </p>
+                                    <p v-else>设置 VPS 每月总流量后，系统将持续显示已用与剩余额度。</p>
+                                </div>
+                            </div>
+                            <div class="monthly-traffic-meter" v-if="status.monthlyTraffic.enabled">
+                                <div class="monthly-traffic-progress-head">
+                                    <span>已用 [[ toFixed(status.monthlyTraffic.percent, 1) ]]%</span>
+                                    <span>[[ monthlyTrafficResetLabel ]]</span>
+                                </div>
+                                <a-progress :show-info="false" :stroke-width="9" :percent="status.monthlyTraffic.percent"
+                                            :stroke-color="monthlyTrafficColor"></a-progress>
+                                <div class="monthly-traffic-meta">
+                                    <span><a-icon type="calendar"></a-icon> 每月 [[ status.monthlyTraffic.resetDay ]] 日自动清零</span>
+                                    <a :href="basePath + 'xui/setting?tab=traffic'">基础设定</a>
+                                </div>
+                            </div>
+                            <a-button v-else type="primary" icon="setting" @click="location.href = basePath + 'xui/setting?tab=traffic'">
+                                前往基础设定
+                            </a-button>
                         </section>
                     </transition>
 
@@ -230,6 +300,16 @@
             this.disk = new CurTotal(0, 0);
             this.loads = [0, 0, 0];
             this.mem = new CurTotal(0, 0);
+            this.monthlyTraffic = {
+                enabled: false,
+                limit: 0,
+                used: 0,
+                remaining: 0,
+                percent: 0,
+                resetDay: 1,
+                periodStart: null,
+                nextReset: null,
+            };
             this.netIO = {up: 0, down: 0};
             this.netTraffic = {sent: 0, recv: 0};
             this.swap = new CurTotal(0, 0);
@@ -245,6 +325,9 @@
             this.disk = new CurTotal(data.disk.current, data.disk.total);
             this.loads = data.loads.map(load => toFixed(load, 2));
             this.mem = new CurTotal(data.mem.current, data.mem.total);
+            if (data.monthlyTraffic != null) {
+                this.monthlyTraffic = data.monthlyTraffic;
+            }
             this.netIO = data.netIO;
             this.netTraffic = data.netTraffic;
             this.swap = new CurTotal(data.swap.current, data.swap.total);
@@ -292,6 +375,18 @@
             refreshing: false,
             statusRequestInFlight: false,
             lastUpdatedAt: null,
+            hasStatusLoaded: false,
+            statusFetchFailed: false,
+            statusHistory: [],
+            inboundHealthLoaded: false,
+            inboundHealthError: false,
+            inboundHealth: {
+                disabled: 0,
+                expired: 0,
+                expiring: 0,
+                exhausted: 0,
+                highUsage: 0,
+            },
         },
         methods: {
             loading(spinning, tip = '加载中') {
@@ -311,7 +406,14 @@
                     if (msg.success) {
                         this.setStatus(msg.obj);
                         this.lastUpdatedAt = new Date();
+                        this.hasStatusLoaded = true;
+                        this.statusFetchFailed = false;
+                    } else {
+                        this.statusFetchFailed = true;
                     }
+                } catch (e) {
+                    this.statusFetchFailed = true;
+                    throw e;
                 } finally {
                     this.statusRequestInFlight = false;
                     this.refreshing = false;
@@ -319,6 +421,57 @@
             },
             setStatus(data) {
                 this.status = new Status(data);
+                this.statusHistory.push({
+                    cpu: this.status.cpu.percent,
+                    mem: this.status.mem.percent,
+                    swap: this.status.swap.percent,
+                    disk: this.status.disk.percent,
+                });
+                if (this.statusHistory.length > 30) {
+                    this.statusHistory.shift();
+                }
+            },
+            sparklinePoints(metric) {
+                if (this.statusHistory.length === 0) {
+                    return '0,22 100,22';
+                }
+                return this.statusHistory.map((sample, index) => {
+                    const x = this.statusHistory.length === 1 ? 0 : index / (this.statusHistory.length - 1) * 100;
+                    const value = Math.max(0, Math.min(100, Number(sample[metric]) || 0));
+                    const y = 22 - value / 100 * 20;
+                    return `${toFixed(x, 2)},${toFixed(y, 2)}`;
+                }).join(' ');
+            },
+            async getInboundHealth() {
+                const msg = await HttpUtil.post('/xui/inbound/list');
+                if (!msg.success) {
+                    this.inboundHealthError = true;
+                    return;
+                }
+                const now = Date.now();
+                const sevenDays = 7 * 24 * 60 * 60 * 1000;
+                const summary = {disabled: 0, expired: 0, expiring: 0, exhausted: 0, highUsage: 0};
+                for (const inbound of msg.obj) {
+                    const used = Number(inbound.up || 0) + Number(inbound.down || 0);
+                    const total = Number(inbound.total || 0);
+                    const expiry = Number(inbound.expiryTime || 0);
+                    if (!inbound.enable) summary.disabled++;
+                    if (expiry > 0 && expiry <= now) summary.expired++;
+                    if (expiry > now && expiry <= now + sevenDays) summary.expiring++;
+                    if (total > 0 && used >= total) {
+                        summary.exhausted++;
+                    } else if (total > 0 && used / total >= .9) {
+                        summary.highUsage++;
+                    }
+                }
+                this.inboundHealth = summary;
+                this.inboundHealthLoaded = true;
+                this.inboundHealthError = false;
+            },
+            openHealthIssue(issue) {
+                if (issue.href) {
+                    location.href = basePath + issue.href;
+                }
             },
             async openSelectV2rayVersion() {
                 this.loading(true);
@@ -351,14 +504,111 @@
                 }
                 return moment(this.lastUpdatedAt).format('HH:mm:ss');
             },
+            healthIssues() {
+                const issues = [];
+                if (this.statusFetchFailed) {
+                    issues.push({key: 'stale', label: '状态数据更新失败', color: 'red', level: 'danger'});
+                }
+                if (this.hasStatusLoaded && this.status.xray.state !== State.Running) {
+                    issues.push({key: 'xray', label: `Xray ${this.status.xray.state}`, color: 'red', level: 'danger'});
+                }
+                for (const metric of this.hasStatusLoaded ? [
+                    {key: 'cpu', label: '处理器', value: this.status.cpu.percent},
+                    {key: 'mem', label: '运行内存', value: this.status.mem.percent},
+                    {key: 'swap', label: '交换空间', value: this.status.swap.percent},
+                    {key: 'disk', label: '磁盘空间', value: this.status.disk.percent},
+                ] : []) {
+                    if (metric.value >= 90) {
+                        issues.push({key: metric.key, label: `${metric.label} ${metric.value}%`, color: 'red', level: 'danger'});
+                    } else if (metric.value >= 80) {
+                        issues.push({key: metric.key, label: `${metric.label} ${metric.value}%`, color: 'orange', level: 'warning'});
+                    }
+                }
+                if (this.status.monthlyTraffic.enabled && this.status.monthlyTraffic.percent >= 100) {
+                    issues.push({key: 'vps-traffic', label: 'VPS 月度流量已用尽', color: 'red', level: 'danger', href: 'xui/setting?tab=traffic'});
+                } else if (this.status.monthlyTraffic.enabled && this.status.monthlyTraffic.percent >= 90) {
+                    issues.push({key: 'vps-traffic', label: `VPS 月度流量已用 ${toFixed(this.status.monthlyTraffic.percent, 1)}%`, color: 'orange', level: 'warning', href: 'xui/setting?tab=traffic'});
+                }
+                if (this.inboundHealthError) {
+                    issues.push({key: 'inbound-unavailable', label: '入站摘要暂不可用', color: 'orange', level: 'warning'});
+                }
+                if (this.inboundHealth.expired > 0) {
+                    issues.push({key: 'expired', label: `${this.inboundHealth.expired} 个入站已到期`, color: 'red', level: 'danger', href: 'xui/inbounds?quick=expired'});
+                }
+                if (this.inboundHealth.exhausted > 0) {
+                    issues.push({key: 'exhausted', label: `${this.inboundHealth.exhausted} 个入站流量耗尽`, color: 'red', level: 'danger', href: 'xui/inbounds?quick=exhausted'});
+                }
+                if (this.inboundHealth.expiring > 0) {
+                    issues.push({key: 'expiring', label: `${this.inboundHealth.expiring} 个入站 7 天内到期`, color: 'orange', level: 'warning', href: 'xui/inbounds?quick=expiring'});
+                }
+                if (this.inboundHealth.highUsage > 0) {
+                    issues.push({key: 'high-usage', label: `${this.inboundHealth.highUsage} 个入站流量超过 90%`, color: 'orange', level: 'warning', href: 'xui/inbounds?quick=high-usage'});
+                }
+                if (this.inboundHealth.disabled > 0) {
+                    issues.push({key: 'disabled', label: `${this.inboundHealth.disabled} 个入站已停用`, color: 'blue', level: 'info', href: 'xui/inbounds?quick=disabled'});
+                }
+                return issues;
+            },
+            healthState() {
+                if (!this.hasStatusLoaded && !this.statusFetchFailed) {
+                    return 'neutral';
+                }
+                if (this.healthIssues.some(issue => issue.level === 'danger')) {
+                    return 'danger';
+                }
+                if (this.healthIssues.some(issue => issue.level === 'warning')) {
+                    return 'warning';
+                }
+                return 'success';
+            },
+            healthTitle() {
+                if (!this.hasStatusLoaded && !this.statusFetchFailed) {
+                    return '正在检查运行状态';
+                }
+                const count = this.healthIssues.filter(issue => issue.level !== 'info').length;
+                if (count === 0) {
+                    return '当前运行状态正常';
+                }
+                return `发现 ${count} 项需要关注`;
+            },
+            healthSummary() {
+                if (!this.hasStatusLoaded && !this.statusFetchFailed) {
+                    return '正在读取服务状态与入站摘要。';
+                }
+                if (this.statusFetchFailed) {
+                    return this.lastUpdatedAt == null
+                        ? '尚未获取到有效状态，请检查连接后重试。'
+                        : `当前显示 ${moment(this.lastUpdatedAt).format('HH:mm:ss')} 的最后成功数据。`;
+                }
+                if (this.healthState === 'success') {
+                    return '关键服务和资源指标均在正常范围内。';
+                }
+                return '请优先检查红色项目；点击提示可直接进入对应配置。';
+            },
+            monthlyTrafficColor() {
+                const percent = Number(this.status.monthlyTraffic.percent || 0);
+                if (percent >= 100) return '#e45454';
+                if (percent >= 90) return '#e29a28';
+                return '#4f7cff';
+            },
+            monthlyTrafficResetLabel() {
+                const nextReset = this.status.monthlyTraffic.nextReset;
+                if (!nextReset) return '等待重置时间';
+                return `${moment(nextReset).format('YYYY-MM-DD HH:mm')} 清零`;
+            },
         },
         async mounted() {
+            let cycle = 0;
             while (true) {
                 try {
                     await this.getStatus();
+                    if (cycle % 15 === 0) {
+                        await this.getInboundHealth();
+                    }
                 } catch (e) {
                     console.error(e);
                 }
+                cycle++;
                 await PromiseUtil.sleep(2000);
             }
         },

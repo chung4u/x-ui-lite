@@ -30,6 +30,12 @@
                     </transition>
 
                     <transition name="list" appear>
+                        <a-alert v-if="loadError" class="data-stale-alert" type="warning" show-icon
+                                 message="入站数据更新失败"
+                                 :description="lastUpdatedAt ? `当前显示 ${lastUpdatedLabel} 的最后成功数据，请检查连接后重试。` : '尚未获取到入站配置，请检查连接后重试。'"></a-alert>
+                    </transition>
+
+                    <transition name="list" appear>
                         <section class="inbound-summary-grid" aria-label="流量概览">
                             <a-row :gutter="16">
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
@@ -85,6 +91,18 @@
                                 </div>
                                 <a-button v-if="hasActiveFilters" icon="undo" @click="resetFilters">重置筛选</a-button>
                             </div>
+                            <div class="inbound-quick-filters" aria-label="入站快捷状态筛选">
+                                <span class="quick-filter-label">快捷查看</span>
+                                <a-radio-group v-model="filters.quick" button-style="solid" size="small">
+                                    <a-radio-button value="all">全部 [[ conditionCounts.all ]]</a-radio-button>
+                                    <a-radio-button value="attention">需要关注 [[ conditionCounts.attention ]]</a-radio-button>
+                                    <a-radio-button value="expired">已到期 [[ conditionCounts.expired ]]</a-radio-button>
+                                    <a-radio-button value="expiring">7 天内到期 [[ conditionCounts.expiring ]]</a-radio-button>
+                                    <a-radio-button value="high-usage">流量紧张 [[ conditionCounts.highUsage ]]</a-radio-button>
+                                    <a-radio-button value="exhausted">流量耗尽 [[ conditionCounts.exhausted ]]</a-radio-button>
+                                    <a-radio-button value="disabled">已停用 [[ conditionCounts.disabled ]]</a-radio-button>
+                                </a-radio-group>
+                            </div>
                             <div class="inbound-filter-bar" aria-label="入站筛选条件">
                                 <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口、协议或 ID">
                                     <a-icon slot="prefix" type="search"></a-icon>
@@ -112,11 +130,12 @@
                             <div class="desktop-inbound-table">
                                 <a-table :columns="columns" :row-key="dbInbound => dbInbound.id"
                                          :data-source="displayedInbounds" :loading="refreshing"
-                                         :scroll="{ x: 1260 }" :pagination="false"
+                                         :scroll="{ x: 1410 }" :pagination="false"
                                          :locale="{ emptyText: emptyStateText }">
                                     <template slot="action" slot-scope="text, dbInbound">
                                         <a-dropdown :trigger="['click']">
-                                            <a-button size="small" @click="e => e.preventDefault()">
+                                            <a-button size="small" :loading="isPending(dbInbound.id)"
+                                                      :disabled="isPending(dbInbound.id)" @click="e => e.preventDefault()">
                                                 管理 <a-icon type="down"></a-icon>
                                             </a-button>
                                             <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
@@ -164,7 +183,14 @@
                                         <span v-else class="muted-text">无</span>
                                     </template>
                                     <template slot="enable" slot-scope="text, dbInbound">
-                                        <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
+                                        <a-switch v-model="dbInbound.enable" :loading="isPending(dbInbound.id)"
+                                                  :disabled="isPending(dbInbound.id)"
+                                                  @change="checked => switchEnable(dbInbound, checked)"></a-switch>
+                                    </template>
+                                    <template slot="condition" slot-scope="text, dbInbound">
+                                        <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
+                                            [[ tag.label ]]
+                                        </a-tag>
                                     </template>
                                     <template slot="expiryTime" slot-scope="text, dbInbound">
                                         <template v-if="dbInbound.expiryTime > 0">
@@ -188,7 +214,9 @@
                                             <strong>[[ dbInbound.remark || '未命名入站' ]]</strong>
                                             <span># [[ dbInbound.id ]]</span>
                                         </div>
-                                        <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
+                                        <a-switch v-model="dbInbound.enable" :loading="isPending(dbInbound.id)"
+                                                  :disabled="isPending(dbInbound.id)"
+                                                  @change="checked => switchEnable(dbInbound, checked)"></a-switch>
                                     </div>
                                     <div class="inbound-mobile-tags">
                                         <a-tag :color="protocolColor(dbInbound.protocol)">[[ dbInbound.protocol.toUpperCase() ]]</a-tag>
@@ -196,6 +224,9 @@
                                         <a-tag v-if="streamLabel(dbInbound) !== '无'" color="green">[[ streamLabel(dbInbound) ]]</a-tag>
                                         <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
                                         <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
+                                        <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
+                                            [[ tag.label ]]
+                                        </a-tag>
                                     </div>
                                     <div class="mobile-traffic-block">
                                         <div class="traffic-values">
@@ -210,11 +241,11 @@
                                         </div>
                                     </div>
                                     <div class="inbound-mobile-actions">
-                                        <a-button v-if="dbInbound.hasLink()" icon="qrcode" @click="showQrcode(dbInbound)">分享</a-button>
-                                        <a-button icon="edit" @click="openEditInbound(dbInbound)">编辑</a-button>
-                                        <a-button icon="info-circle" @click="showInfo(dbInbound)">详情</a-button>
+                                        <a-button v-if="dbInbound.hasLink()" icon="qrcode" :disabled="isPending(dbInbound.id)" @click="showQrcode(dbInbound)">分享</a-button>
+                                        <a-button icon="edit" :disabled="isPending(dbInbound.id)" @click="openEditInbound(dbInbound)">编辑</a-button>
+                                        <a-button icon="info-circle" :disabled="isPending(dbInbound.id)" @click="showInfo(dbInbound)">详情</a-button>
                                         <a-dropdown :trigger="['click']">
-                                            <a-button icon="more">更多</a-button>
+                                            <a-button icon="more" :loading="isPending(dbInbound.id)" :disabled="isPending(dbInbound.id)">更多</a-button>
                                             <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
                                                 <a-menu-item key="resetTraffic"><a-icon type="retweet"></a-icon>重置流量</a-menu-item>
                                                 <a-menu-item key="delete">
@@ -276,6 +307,11 @@
         width: 160,
         scopedSlots: { customRender: 'stream' },
     }, {
+        title: "状态提示",
+        align: 'center',
+        width: 150,
+        scopedSlots: { customRender: 'condition' },
+    }, {
         title: "到期时间",
         align: 'center',
         width: 132,
@@ -304,7 +340,10 @@
                 protocol: 'all',
                 status: 'all',
                 sort: 'id-asc',
+                quick: 'all',
             },
+            loadError: false,
+            pendingInboundIds: {},
         },
         methods: {
             loading(spinning=true) {
@@ -320,11 +359,13 @@
                 try {
                     const msg = await HttpUtil.post('/xui/inbound/list');
                     if (!msg.success) {
+                        this.loadError = true;
                         return;
                     }
                     this.setInbounds(msg.obj);
                     this.lastUpdatedAt = new Date();
                     this.hasLoaded = true;
+                    this.loadError = false;
                 } finally {
                     this.loading(false);
                     this.refreshing = false;
@@ -344,6 +385,7 @@
                 this.filters.protocol = 'all';
                 this.filters.status = 'all';
                 this.filters.sort = 'id-asc';
+                this.filters.quick = 'all';
             },
             protocolColor(protocol) {
                 const colors = {
@@ -398,7 +440,64 @@
                 }
                 return `${DateUtil.formatMillis(dbInbound.expiryTime)} 到期`;
             },
+            conditionFor(dbInbound) {
+                const now = Date.now();
+                const expiry = Number(dbInbound.expiryTime || 0);
+                const used = Number(dbInbound.up || 0) + Number(dbInbound.down || 0);
+                const total = Number(dbInbound.total || 0);
+                const ratio = total > 0 ? used / total : 0;
+                return {
+                    disabled: !dbInbound.enable,
+                    expired: expiry > 0 && expiry <= now,
+                    expiring: expiry > now && expiry <= now + 7 * 24 * 60 * 60 * 1000,
+                    exhausted: total > 0 && used >= total,
+                    highUsage: total > 0 && used < total && ratio >= .9,
+                };
+            },
+            conditionTags(dbInbound) {
+                const condition = this.conditionFor(dbInbound);
+                const tags = [];
+                if (condition.expired) tags.push({key: 'expired', label: '已到期', color: 'red'});
+                else if (condition.expiring) tags.push({key: 'expiring', label: '7 天内到期', color: 'orange'});
+                if (condition.exhausted) tags.push({key: 'exhausted', label: '流量耗尽', color: 'red'});
+                else if (condition.highUsage) tags.push({key: 'high-usage', label: '流量超过 90%', color: 'orange'});
+                if (condition.disabled) tags.push({key: 'disabled', label: '已停用', color: 'blue'});
+                if (tags.length === 0) tags.push({key: 'normal', label: '正常', color: 'green'});
+                return tags;
+            },
+            matchesQuickFilter(dbInbound) {
+                const condition = this.conditionFor(dbInbound);
+                switch (this.filters.quick) {
+                    case 'attention':
+                        return condition.expired || condition.expiring || condition.exhausted || condition.highUsage;
+                    case 'expired':
+                        return condition.expired;
+                    case 'expiring':
+                        return condition.expiring;
+                    case 'high-usage':
+                        return condition.highUsage;
+                    case 'exhausted':
+                        return condition.exhausted;
+                    case 'disabled':
+                        return condition.disabled;
+                    default:
+                        return true;
+                }
+            },
+            isPending(id) {
+                return !!this.pendingInboundIds[id];
+            },
+            setPending(id, pending) {
+                if (pending) {
+                    this.$set(this.pendingInboundIds, id, true);
+                } else {
+                    this.$delete(this.pendingInboundIds, id);
+                }
+            },
             clickAction(action, dbInbound) {
+                if (this.isPending(dbInbound.id)) {
+                    return;
+                }
                 switch (action.key) {
                     case "qrcode":
                         this.showQrcode(dbInbound);
@@ -418,10 +517,9 @@
                 inModal.show({
                     title: '添加入站',
                     okText: '添加',
+                    usedPorts: this.dbInbounds.map(inbound => inbound.port),
                     confirm: async (inbound, dbInbound) => {
-                        inModal.loading();
                         await this.addInbound(inbound, dbInbound);
-                        inModal.close();
                     }
                 });
             },
@@ -432,15 +530,15 @@
                     okText: '修改',
                     inbound: inbound,
                     dbInbound: dbInbound,
+                    editingId: dbInbound.id,
+                    usedPorts: this.dbInbounds.filter(item => item.id !== dbInbound.id).map(item => item.port),
                     confirm: async (inbound, dbInbound) => {
-                        inModal.loading();
                         await this.updateInbound(inbound, dbInbound);
-                        inModal.close();
                     }
                 });
             },
-            async addInbound(inbound, dbInbound) {
-                const data = {
+            inboundPayload(inbound, dbInbound) {
+                return {
                     up: dbInbound.up,
                     down: dbInbound.down,
                     total: dbInbound.total,
@@ -455,47 +553,48 @@
                     streamSettings: inbound.stream.toString(),
                     sniffing: inbound.canSniffing() ? inbound.sniffing.toString() : '{}',
                 };
-                await this.submit('/xui/inbound/add', data, inModal);
             },
-            async updateInbound(inbound, dbInbound) {
-                const data = {
-                    up: dbInbound.up,
-                    down: dbInbound.down,
-                    total: dbInbound.total,
-                    remark: dbInbound.remark,
-                    enable: dbInbound.enable,
-                    expiryTime: dbInbound.expiryTime,
-
-                    listen: inbound.listen,
-                    port: inbound.port,
-                    protocol: inbound.protocol,
-                    settings: inbound.settings.toString(),
-                    streamSettings: inbound.stream.toString(),
-                    sniffing: inbound.canSniffing() ? inbound.sniffing.toString() : '{}',
-                };
-                await this.submit(`/xui/inbound/update/${dbInbound.id}`, data, inModal);
+            async addInbound(inbound, dbInbound) {
+                return await this.submit('/xui/inbound/add', this.inboundPayload(inbound, dbInbound), inModal);
+            },
+            async updateInbound(inbound, dbInbound, modal = inModal) {
+                return await this.submit(`/xui/inbound/update/${dbInbound.id}`, this.inboundPayload(inbound, dbInbound), modal);
             },
             resetTraffic(dbInbound) {
                 this.$confirm({
                     title: '重置流量',
-                    content: '确定要重置流量吗?',
+                    content: `将清空“${dbInbound.remark || '未命名入站'}”（端口 ${dbInbound.port}）的上传与下载统计，配置本身不会改变。`,
                     okText: '重置',
                     cancelText: '取消',
-                    onOk: () => {
-                        const inbound = dbInbound.toInbound();
-                        dbInbound.up = 0;
-                        dbInbound.down = 0;
-                        this.updateInbound(inbound, dbInbound);
+                    onOk: async () => {
+                        this.setPending(dbInbound.id, true);
+                        try {
+                            const inbound = dbInbound.toInbound();
+                            const resetInbound = new DBInbound(dbInbound);
+                            resetInbound.up = 0;
+                            resetInbound.down = 0;
+                            await this.updateInbound(inbound, resetInbound, null);
+                        } finally {
+                            this.setPending(dbInbound.id, false);
+                        }
                     },
                 });
             },
             delInbound(dbInbound) {
                 this.$confirm({
                     title: '删除入站',
-                    content: '确定要删除入站吗?',
+                    content: `将永久删除“${dbInbound.remark || '未命名入站'}”（端口 ${dbInbound.port}）。删除后该端口的客户端将无法继续连接。`,
                     okText: '删除',
                     cancelText: '取消',
-                    onOk: () => this.submit('/xui/inbound/del/' + dbInbound.id),
+                    okType: 'danger',
+                    onOk: async () => {
+                        this.setPending(dbInbound.id, true);
+                        try {
+                            await this.submit('/xui/inbound/del/' + dbInbound.id);
+                        } finally {
+                            this.setPending(dbInbound.id, false);
+                        }
+                    },
                 });
             },
             showQrcode(dbInbound) {
@@ -505,17 +604,32 @@
             showInfo(dbInbound) {
                 infoModal.show(dbInbound);
             },
-            switchEnable(dbInbound) {
-                this.submit(`/xui/inbound/update/${dbInbound.id}`, dbInbound);
+            async switchEnable(dbInbound, checked) {
+                const previous = !checked;
+                this.setPending(dbInbound.id, true);
+                try {
+                    const msg = await this.submit(`/xui/inbound/update/${dbInbound.id}`, dbInbound);
+                    if (!msg.success) {
+                        dbInbound.enable = previous;
+                    }
+                } finally {
+                    this.setPending(dbInbound.id, false);
+                }
             },
             async submit(url, data, modal) {
                 const msg = await HttpUtil.postWithModal(url, data, modal);
                 if (msg.success) {
                     await this.getDBInbounds();
                 }
+                return msg;
             },
         },
         mounted() {
+            const quick = new URLSearchParams(location.search).get('quick');
+            const allowedQuickFilters = ['all', 'attention', 'expired', 'expiring', 'high-usage', 'exhausted', 'disabled'];
+            if (allowedQuickFilters.includes(quick)) {
+                this.filters.quick = quick;
+            }
             this.getDBInbounds();
         },
         computed: {
@@ -533,11 +647,27 @@
             },
             hasActiveFilters() {
                 return this.filters.query !== '' || this.filters.protocol !== 'all' ||
-                    this.filters.status !== 'all' || this.filters.sort !== 'id-asc';
+                    this.filters.status !== 'all' || this.filters.sort !== 'id-asc' || this.filters.quick !== 'all';
+            },
+            conditionCounts() {
+                const counts = {all: this.dbInbounds.length, attention: 0, expired: 0, expiring: 0, highUsage: 0, exhausted: 0, disabled: 0};
+                for (const inbound of this.dbInbounds) {
+                    const condition = this.conditionFor(inbound);
+                    if (condition.expired || condition.expiring || condition.exhausted || condition.highUsage) counts.attention++;
+                    if (condition.expired) counts.expired++;
+                    if (condition.expiring) counts.expiring++;
+                    if (condition.highUsage) counts.highUsage++;
+                    if (condition.exhausted) counts.exhausted++;
+                    if (condition.disabled) counts.disabled++;
+                }
+                return counts;
             },
             displayedInbounds() {
                 const query = this.filters.query.trim().toLowerCase();
                 const list = this.dbInbounds.filter(inbound => {
+                    if (!this.matchesQuickFilter(inbound)) {
+                        return false;
+                    }
                     if (this.filters.protocol !== 'all' && inbound.protocol !== this.filters.protocol) {
                         return false;
                     }

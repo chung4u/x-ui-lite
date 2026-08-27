@@ -1,106 +1,94 @@
 {{define "form/inbound"}}
-<!-- base -->
-<a-form layout="inline">
-    <a-form-item label='{{ i18n "remark" }}'>
-        <a-input v-model.trim="dbInbound.remark"></a-input>
-    </a-form-item>
-    <a-form-item label='{{ i18n "enable" }}'>
-        <a-switch v-model="dbInbound.enable"></a-switch>
-    </a-form-item>
-    <a-form-item label='{{ i18n "protocol" }}'>
-        <a-select v-model="inbound.protocol" style="width: 160px;">
-            <a-select-option v-for="p in Protocols" :key="p" :value="p">[[ p ]]</a-select-option>
-        </a-select>
-    </a-form-item>
-    <a-form-item>
-        <span slot="label">
-            监听 IP
-            <a-tooltip>
-                <template slot="title">
-                    默认留空即可
-                </template>
-                <a-icon type="question-circle" theme="filled"></a-icon>
-            </a-tooltip>
-        </span>
-        <a-input v-model.trim="inbound.listen"></a-input>
-    </a-form-item>
-    <a-form-item label="端口">
-        <a-input type="number" v-model.number="inbound.port"></a-input>
-    </a-form-item>
-    <a-form-item>
-        <span slot="label">
-            总流量(GB)
-            <a-tooltip>
-                <template slot="title">
-                    0 表示不限制
-                </template>
-                <a-icon type="question-circle" theme="filled"></a-icon>
-            </a-tooltip>
-        </span>
-        <a-input-number v-model="dbInbound.totalGB" :min="0"></a-input-number>
-    </a-form-item>
-    <a-form-item>
-        <span slot="label">
-            到期时间
-            <a-tooltip>
-                <template slot="title">
-                    留空则永不到期
-                </template>
-                <a-icon type="question-circle" theme="filled"></a-icon>
-            </a-tooltip>
-        </span>
-        <a-date-picker :show-time="{ format: 'HH:mm' }" format="YYYY-MM-DD HH:mm"
-                       v-model="dbInbound._expiryTime" style="width: 300px;"></a-date-picker>
-    </a-form-item>
-</a-form>
+<div class="inbound-form-layout">
+    <section class="inbound-form-section">
+        <div class="inbound-form-section-head">
+            <div class="form-section-icon"><a-icon type="profile"></a-icon></div>
+            <div>
+                <h3>基础配置</h3>
+                <p>确定入站名称、协议、端口、限额与到期时间。</p>
+            </div>
+        </div>
+        <a-form class="inbound-base-form" layout="vertical">
+            <a-form-item label='{{ i18n "remark" }}'>
+                <a-input v-model.trim="dbInbound.remark" placeholder="例如：主节点"></a-input>
+            </a-form-item>
+            <a-form-item label='{{ i18n "protocol" }}'>
+                <a-select v-model="inbound.protocol">
+                    <a-select-option v-for="p in Protocols" :key="p" :value="p">[[ p ]]</a-select-option>
+                </a-select>
+            </a-form-item>
+            <a-form-item>
+                <span slot="label">
+                    监听 IP
+                    <a-tooltip title="默认留空即可"><a-icon type="question-circle" theme="filled"></a-icon></a-tooltip>
+                </span>
+                <a-input v-model.trim="inbound.listen" placeholder="留空监听所有 IP"></a-input>
+            </a-form-item>
+            <a-form-item label="端口" required>
+                <a-input type="number" min="1" max="65535" v-model.number="inbound.port"></a-input>
+            </a-form-item>
+            <a-form-item>
+                <span slot="label">
+                    总流量 (GB)
+                    <a-tooltip title="0 表示不限制"><a-icon type="question-circle" theme="filled"></a-icon></a-tooltip>
+                </span>
+                <a-input-number v-model="dbInbound.totalGB" :min="0"></a-input-number>
+            </a-form-item>
+            <a-form-item>
+                <span slot="label">
+                    到期时间
+                    <a-tooltip title="留空则永不到期"><a-icon type="question-circle" theme="filled"></a-icon></a-tooltip>
+                </span>
+                <a-date-picker :show-time="{ format: 'HH:mm' }" format="YYYY-MM-DD HH:mm"
+                               v-model="dbInbound._expiryTime"></a-date-picker>
+            </a-form-item>
+            <a-form-item label='{{ i18n "enable" }}'>
+                <div class="form-switch-row">
+                    <a-switch v-model="dbInbound.enable"></a-switch>
+                    <span>[[ dbInbound.enable ? '保存后立即启用' : '保存后保持停用' ]]</span>
+                </div>
+            </a-form-item>
+        </a-form>
+    </section>
 
-<!-- vmess settings -->
-<template v-if="inbound.protocol === Protocols.VMESS">
-    {{template "form/vmess"}}
-</template>
+    <section class="inbound-form-section protocol-section">
+        <div class="inbound-form-section-head">
+            <div class="form-section-icon success"><a-icon type="key"></a-icon></div>
+            <div>
+                <h3>协议与认证</h3>
+                <p>仅修改当前协议需要的客户端身份与认证参数。</p>
+            </div>
+        </div>
+        <template v-if="inbound.protocol === Protocols.VMESS">{{template "form/vmess"}}</template>
+        <template v-if="inbound.protocol === Protocols.VLESS">{{template "form/vless"}}</template>
+        <template v-if="inbound.protocol === Protocols.TROJAN">{{template "form/trojan"}}</template>
+        <template v-if="inbound.protocol === Protocols.SHADOWSOCKS">{{template "form/shadowsocks"}}</template>
+        <template v-if="inbound.protocol === Protocols.DOKODEMO">{{template "form/dokodemo"}}</template>
+        <template v-if="inbound.protocol === Protocols.SOCKS">{{template "form/socks"}}</template>
+        <template v-if="inbound.protocol === Protocols.HTTP">{{template "form/http"}}</template>
+    </section>
 
-<!-- vless settings -->
-<template v-if="inbound.protocol === Protocols.VLESS">
-    {{template "form/vless"}}
-</template>
+    <section class="inbound-form-section" v-if="inbound.canEnableStream()">
+        <div class="inbound-form-section-head">
+            <div class="form-section-icon violet"><a-icon type="deployment-unit"></a-icon></div>
+            <div>
+                <h3>传输配置</h3>
+                <p>选择 TCP、WebSocket、gRPC 等传输方式及其详细参数。</p>
+            </div>
+        </div>
+        {{template "form/streamSettings"}}
+    </section>
 
-<!-- trojan settings -->
-<template v-if="inbound.protocol === Protocols.TROJAN">
-    {{template "form/trojan"}}
-</template>
-
-<!-- shadowsocks -->
-<template v-if="inbound.protocol === Protocols.SHADOWSOCKS">
-    {{template "form/shadowsocks"}}
-</template>
-
-<!-- dokodemo-door -->
-<template v-if="inbound.protocol === Protocols.DOKODEMO">
-    {{template "form/dokodemo"}}
-</template>
-
-<!-- socks -->
-<template v-if="inbound.protocol === Protocols.SOCKS">
-    {{template "form/socks"}}
-</template>
-
-<!-- http -->
-<template v-if="inbound.protocol === Protocols.HTTP">
-    {{template "form/http"}}
-</template>
-
-<!-- stream settings -->
-<template v-if="inbound.canEnableStream()">
-    {{template "form/streamSettings"}}
-</template>
-
-<!-- tls settings -->
-<template v-if="inbound.canEnableTls()">
-    {{template "form/tlsSettings"}}
-</template>
-
-<!-- sniffing -->
-<template v-if="inbound.canSniffing()">
-    {{template "form/sniffing"}}
-</template>
+    <section class="inbound-form-section" v-if="inbound.canEnableTls() || inbound.canSniffing()">
+        <div class="inbound-form-section-head">
+            <div class="form-section-icon warning"><a-icon type="safety-certificate"></a-icon></div>
+            <div>
+                <h3>TLS 与高级设置</h3>
+                <p>证书和嗅探参数会影响连接兼容性，无特殊需求时保持现有值。</p>
+            </div>
+        </div>
+        <template v-if="inbound.canEnableTls()">{{template "form/tlsSettings"}}</template>
+        <template v-if="inbound.canSniffing()">{{template "form/sniffing"}}</template>
+    </section>
+</div>
 {{end}}

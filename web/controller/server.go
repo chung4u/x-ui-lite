@@ -3,6 +3,7 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 	"time"
+	"x-ui/logger"
 	"x-ui/web/global"
 	"x-ui/web/service"
 )
@@ -44,6 +45,11 @@ func (a *ServerController) refreshStatus() {
 func (a *ServerController) startTask() {
 	webServer := global.GetWebServer()
 	c := webServer.GetCron()
+	c.AddFunc("@every 10s", func() {
+		if _, err := a.serverService.RefreshMonthlyTraffic(); err != nil {
+			logger.Warning("refresh monthly traffic task failed:", err)
+		}
+	})
 	c.AddFunc("@every 2s", func() {
 		now := time.Now()
 		if now.Sub(a.lastGetStatusTime) > time.Minute*3 {

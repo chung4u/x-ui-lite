@@ -166,6 +166,9 @@ class AllSetting {
 
         this.xrayTemplateConfig = "";
 
+        this.trafficLimitGB = 0;
+        this.trafficResetDay = 1;
+
         this.timeLocation = "Asia/Shanghai";
 
         if (data == null) {

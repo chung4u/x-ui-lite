@@ -16,15 +16,44 @@
                                 <p class="page-subtitle">管理访问方式、管理员账号与 Xray 模板。带有“重启生效”的项目保存后需要重启面板。</p>
                             </div>
                             <div class="page-actions">
+                                <div class="settings-save-state" :class="saveBtnDisable ? 'saved' : 'pending'">
+                                    <a-icon :type="saveBtnDisable ? 'check-circle' : 'edit'"></a-icon>
+                                    [[ saveBtnDisable ? '已保存' : `${changedSettingLabels.length} 项待保存` ]]
+                                </div>
                                 <a-button type="primary" icon="save" :disabled="saveBtnDisable" @click="updateAllSetting">保存配置</a-button>
-                                <a-button type="danger" icon="poweroff" :disabled="!saveBtnDisable" @click="restartPanel">重启面板</a-button>
                             </div>
                         </header>
                     </transition>
 
                     <transition name="list" appear>
+                        <a-alert v-if="settingsLoadError" class="data-stale-alert" type="warning" show-icon
+                                 message="面板配置加载失败" description="当前内容可能不是服务器最新配置，请刷新页面后重试。"></a-alert>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <section class="settings-summary-grid" aria-label="面板配置摘要">
+                            <div class="settings-summary-item">
+                                <div class="settings-summary-icon"><a-icon type="api"></a-icon></div>
+                                <div><span>访问端点</span><strong>[[ accessEndpoint ]]</strong></div>
+                            </div>
+                            <div class="settings-summary-item">
+                                <div class="settings-summary-icon success"><a-icon type="safety-certificate"></a-icon></div>
+                                <div><span>证书状态</span><strong>[[ certificateStatus ]]</strong></div>
+                            </div>
+                            <div class="settings-summary-item">
+                                <div class="settings-summary-icon violet"><a-icon type="link"></a-icon></div>
+                                <div><span>访问路径</span><strong>[[ allSetting.webBasePath || '/' ]]</strong></div>
+                            </div>
+                            <div class="settings-summary-item">
+                                <div class="settings-summary-icon warning"><a-icon type="cloud"></a-icon></div>
+                                <div><span>月度流量额度</span><strong>[[ trafficQuotaLabel ]]</strong></div>
+                            </div>
+                        </section>
+                    </transition>
+
+                    <transition name="list" appear>
                         <a-card class="settings-card" hoverable>
-                            <a-tabs default-active-key="1">
+                            <a-tabs v-model="activeTab">
                                 <a-tab-pane key="1" tab="面板配置">
                                     <a-list class="setting-list" item-layout="horizontal">
                                         <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，保存并重启面板后生效" v-model="allSetting.webListen"></setting-list-item>
@@ -49,7 +78,7 @@
                                             <a-input type="password" v-model="user.newPassword" name="new-password" autocomplete="new-password"></a-input>
                                         </a-form-item>
                                         <a-form-item style="margin-bottom: 0">
-                                            <a-button type="primary" html-type="submit" icon="user">更新管理员账号</a-button>
+                                            <a-button type="primary" html-type="submit" icon="user" :loading="updatingUser">更新管理员账号</a-button>
                                         </a-form-item>
                                     </a-form>
                                 </a-tab-pane>
@@ -58,13 +87,38 @@
                                         <setting-list-item type="textarea" title="Xray 配置模板" desc="系统会基于此模板生成最终配置，保存并重启面板后生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
-                                <a-tab-pane key="4" tab="其他设置">
+                                <a-tab-pane key="4" tab="VPS 流量">
+                                    <a-alert class="settings-inline-alert" type="info" show-icon
+                                             message="月度流量从启用设置后开始计量"
+                                             description="统计服务器默认出口网卡的上传与下载总量，到达每月重置日后自动开始新的周期。"></a-alert>
+                                    <a-list class="setting-list" item-layout="horizontal">
+                                        <setting-list-item type="number" title="月度总额度 (GB)" desc="0 表示关闭月度流量显示；保存后约 10 秒生效，无需重启面板" v-model.number="allSetting.trafficLimitGB"></setting-list-item>
+                                        <setting-list-item type="number" title="每月重置日" desc="可设置 1–31 日；月份天数不足时按该月最后一天 00:00 自动清零" v-model.number="allSetting.trafficResetDay"></setting-list-item>
+                                    </a-list>
+                                </a-tab-pane>
+                                <a-tab-pane key="5" tab="其他设置">
                                     <a-list class="setting-list" item-layout="horizontal">
                                         <setting-list-item type="text" title="时区" desc="定时任务将按照该时区运行，保存并重启面板后生效" v-model="allSetting.timeLocation"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
                             </a-tabs>
                         </a-card>
+                    </transition>
+
+                    <transition name="list" appear>
+                        <section class="settings-danger-zone" aria-label="危险操作">
+                            <div class="danger-zone-copy">
+                                <div class="danger-zone-icon"><a-icon type="poweroff"></a-icon></div>
+                                <div>
+                                    <div class="danger-zone-label">危险操作</div>
+                                    <h2>重启面板服务</h2>
+                                    <p>重启会短暂中断控制面板连接。如果修改了端口、证书或访问路径，请先确认新地址可访问。</p>
+                                </div>
+                            </div>
+                            <a-button type="danger" icon="poweroff" :disabled="!saveBtnDisable || spinning" @click="restartPanel">
+                                重启面板
+                            </a-button>
+                        </section>
                     </transition>
                 </div>
             </a-spin>
@@ -85,6 +139,9 @@
             allSetting: new AllSetting(),
             saveBtnDisable: true,
             user: {},
+            updatingUser: false,
+            settingsLoadError: false,
+            activeTab: '1',
         },
         methods: {
             loading(spinning = true) {
@@ -98,9 +155,66 @@
                     this.oldAllSetting = new AllSetting(msg.obj);
                     this.allSetting = new AllSetting(msg.obj);
                     this.saveBtnDisable = true;
+                    this.settingsLoadError = false;
+                } else {
+                    this.settingsLoadError = true;
                 }
             },
+            validateSettings() {
+                const port = Number(this.allSetting.webPort);
+                if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                    return '面板监听端口必须是 1–65535 之间的整数。';
+                }
+                const basePath = this.allSetting.webBasePath || '';
+                if (!basePath.startsWith('/') || !basePath.endsWith('/')) {
+                    return '面板 URL 根路径必须以 / 开头并以 / 结尾。';
+                }
+                const hasCert = !ObjectUtil.isEmpty(this.allSetting.webCertFile);
+                const hasKey = !ObjectUtil.isEmpty(this.allSetting.webKeyFile);
+                if (hasCert !== hasKey) {
+                    return '证书公钥和密钥路径必须同时填写或同时留空。';
+                }
+                const trafficLimit = Number(this.allSetting.trafficLimitGB);
+                if (!Number.isInteger(trafficLimit) || trafficLimit < 0) {
+                    return '月度流量额度必须是大于或等于 0 的整数。';
+                }
+                const resetDay = Number(this.allSetting.trafficResetDay);
+                if (!Number.isInteger(resetDay) || resetDay < 1 || resetDay > 31) {
+                    return '每月重置日必须是 1–31 之间的整数。';
+                }
+                try {
+                    JSON.parse(this.allSetting.xrayTemplateConfig);
+                } catch (e) {
+                    return 'Xray 配置模板不是有效的 JSON，请检查格式。';
+                }
+                return '';
+            },
+            confirmDialog(options) {
+                return new Promise(resolve => {
+                    this.$confirm({
+                        ...options,
+                        onOk: () => resolve(true),
+                        onCancel: () => resolve(false),
+                    });
+                });
+            },
             async updateAllSetting() {
+                const validationError = this.validateSettings();
+                if (validationError) {
+                    this.$message.error(validationError);
+                    return;
+                }
+                if (this.connectivityChangeLabels.length > 0) {
+                    const confirmed = await this.confirmDialog({
+                        title: '保存访问方式变更？',
+                        content: `本次修改包含：${this.connectivityChangeLabels.join('、')}。保存后不会立即重启，请先确认防火墙、证书和新访问地址。`,
+                        okText: '确认保存',
+                        cancelText: '继续检查',
+                    });
+                    if (!confirmed) {
+                        return;
+                    }
+                }
                 this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/update", this.allSetting);
                 this.loading(false);
@@ -109,23 +223,29 @@
                 }
             },
             async updateUser() {
+                if (this.updatingUser) {
+                    return;
+                }
+                this.updatingUser = true;
                 this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/updateUser", this.user);
                 this.loading(false);
+                this.updatingUser = false;
                 if (msg.success) {
                     this.user = {};
                 }
             },
             async restartPanel() {
-                await new Promise(resolve => {
-                    this.$confirm({
-                        title: '重启面板',
-                        content: '确定要重启面板吗？点击确定将于 3 秒后重启，若重启后无法访问面板，请前往服务器查看面板日志信息',
-                        okText: '确定',
-                        cancelText: '取消',
-                        onOk: () => resolve(),
-                    });
+                const confirmed = await this.confirmDialog({
+                    title: '确认重启面板？',
+                    content: '面板将在 3 秒后重启，当前管理连接会短暂中断。请确保已保存配置，并且保留服务器独立恢复通道。',
+                    okText: '确认重启',
+                    okType: 'danger',
+                    cancelText: '取消',
                 });
+                if (!confirmed) {
+                    return;
+                }
                 this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/restartPanel");
                 this.loading(false);
@@ -136,12 +256,67 @@
                 }
             }
         },
+        computed: {
+            changedSettingLabels() {
+                const labels = {
+                    webListen: '监听 IP',
+                    webPort: '监听端口',
+                    webCertFile: '证书公钥',
+                    webKeyFile: '证书密钥',
+                    webBasePath: '访问路径',
+                    xrayTemplateConfig: 'Xray 模板',
+                    trafficLimitGB: '月度流量额度',
+                    trafficResetDay: '流量重置日',
+                    timeLocation: '时区',
+                };
+                return Object.keys(labels)
+                    .filter(key => this.oldAllSetting[key] !== this.allSetting[key])
+                    .map(key => labels[key]);
+            },
+            connectivityChangeLabels() {
+                const risky = ['监听 IP', '监听端口', '证书公钥', '证书密钥', '访问路径'];
+                return this.changedSettingLabels.filter(label => risky.includes(label));
+            },
+            accessEndpoint() {
+                const listen = this.allSetting.webListen || '所有 IP';
+                return `${listen}:${this.allSetting.webPort}`;
+            },
+            certificateStatus() {
+                const hasCert = !ObjectUtil.isEmpty(this.allSetting.webCertFile);
+                const hasKey = !ObjectUtil.isEmpty(this.allSetting.webKeyFile);
+                if (hasCert && hasKey) return '已配置 HTTPS';
+                if (hasCert || hasKey) return '证书配置不完整';
+                return '未配置证书';
+            },
+            trafficQuotaLabel() {
+                const limit = Number(this.allSetting.trafficLimitGB || 0);
+                return limit > 0 ? `${limit} GB · 每月 ${this.allSetting.trafficResetDay} 日清零` : '未启用';
+            },
+        },
+        watch: {
+            allSetting: {
+                deep: true,
+                handler() {
+                    this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
+                },
+            },
+        },
         async mounted() {
-            await this.getAllSetting();
-            while (true) {
-                await PromiseUtil.sleep(1000);
-                this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
+            if (new URLSearchParams(location.search).get('tab') === 'traffic') {
+                this.activeTab = '4';
             }
+            await this.getAllSetting();
+            this.beforeUnloadHandler = event => {
+                if (this.saveBtnDisable) {
+                    return;
+                }
+                event.preventDefault();
+                event.returnValue = '';
+            };
+            window.addEventListener('beforeunload', this.beforeUnloadHandler);
+        },
+        beforeDestroy() {
+            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
         },
     });
 

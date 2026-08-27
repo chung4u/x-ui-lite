@@ -2,6 +2,7 @@ package service
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 	"x-ui/logger"
 	"x-ui/util/sys"
@@ -62,6 +65,18 @@ type Status struct {
 		Sent uint64 `json:"sent"`
 		Recv uint64 `json:"recv"`
 	} `json:"netTraffic"`
+	MonthlyTraffic MonthlyTraffic `json:"monthlyTraffic"`
+}
+
+type MonthlyTraffic struct {
+	Enabled     bool      `json:"enabled"`
+	Limit       uint64    `json:"limit"`
+	Used        uint64    `json:"used"`
+	Remaining   uint64    `json:"remaining"`
+	Percent     float64   `json:"percent"`
+	ResetDay    int       `json:"resetDay"`
+	PeriodStart time.Time `json:"periodStart"`
+	NextReset   time.Time `json:"nextReset"`
 }
 
 type Release struct {
@@ -69,7 +84,217 @@ type Release struct {
 }
 
 type ServerService struct {
-	xrayService XrayService
+	xrayService    XrayService
+	settingService SettingService
+
+	trafficMu            sync.Mutex
+	trafficState         *MonthlyTrafficState
+	trafficLimitGB       int
+	trafficResetDay      int
+	trafficLocation      *time.Location
+	trafficConfigRefresh time.Time
+	trafficLastPersist   time.Time
+	trafficSnapshot      MonthlyTraffic
+}
+
+const bytesPerGB = uint64(1024 * 1024 * 1024)
+
+func trafficCounterDelta(current, previous uint64) uint64 {
+	if current >= previous {
+		return current - previous
+	}
+	// The operating-system counter restarts from zero after a reboot.
+	return current
+}
+
+func trafficResetDate(year int, month time.Month, resetDay int, location *time.Location) time.Time {
+	if resetDay < 1 {
+		resetDay = 1
+	} else if resetDay > 31 {
+		resetDay = 31
+	}
+	daysInMonth := time.Date(year, month+1, 0, 0, 0, 0, 0, location).Day()
+	if resetDay > daysInMonth {
+		resetDay = daysInMonth
+	}
+	return time.Date(year, month, resetDay, 0, 0, 0, 0, location)
+}
+
+func trafficPeriodStart(now time.Time, resetDay int) time.Time {
+	start := trafficResetDate(now.Year(), now.Month(), resetDay, now.Location())
+	if now.Before(start) {
+		previousMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, -1, 0)
+		start = trafficResetDate(previousMonth.Year(), previousMonth.Month(), resetDay, now.Location())
+	}
+	return start
+}
+
+func trafficNextReset(periodStart time.Time, resetDay int) time.Time {
+	nextMonth := time.Date(periodStart.Year(), periodStart.Month()+1, 1, 0, 0, 0, 0, periodStart.Location())
+	return trafficResetDate(nextMonth.Year(), nextMonth.Month(), resetDay, periodStart.Location())
+}
+
+func defaultRouteInterfaces() map[string]struct{} {
+	interfaces := make(map[string]struct{})
+	file, err := os.Open("/proc/net/route")
+	if err != nil {
+		return interfaces
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && fields[1] == "00000000" {
+			interfaces[fields[0]] = struct{}{}
+		}
+	}
+	return interfaces
+}
+
+func isVirtualTrafficInterface(name string) bool {
+	if name == "lo" {
+		return true
+	}
+	for _, prefix := range []string{"docker", "veth", "br-", "virbr", "tun", "tap"} {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func externalNetworkTraffic() (sent, received uint64, err error) {
+	stats, err := net.IOCounters(true)
+	if err != nil {
+		return 0, 0, err
+	}
+	routes := defaultRouteInterfaces()
+	for _, stat := range stats {
+		if len(routes) > 0 {
+			if _, ok := routes[stat.Name]; !ok {
+				continue
+			}
+		} else if isVirtualTrafficInterface(stat.Name) {
+			continue
+		}
+		sent += stat.BytesSent
+		received += stat.BytesRecv
+	}
+	return sent, received, nil
+}
+
+func (s *ServerService) refreshTrafficConfigLocked(now time.Time) error {
+	if s.trafficLocation != nil && now.Sub(s.trafficConfigRefresh) < 10*time.Second {
+		return nil
+	}
+	allSetting, err := s.settingService.GetAllSetting()
+	if err != nil {
+		return err
+	}
+	location, err := s.settingService.GetTimeLocation()
+	if err != nil {
+		return err
+	}
+	s.trafficLimitGB = allSetting.TrafficLimitGB
+	s.trafficResetDay = allSetting.TrafficResetDay
+	s.trafficLocation = location
+	s.trafficConfigRefresh = now
+	return nil
+}
+
+func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
+	sent, received, err := externalNetworkTraffic()
+	if err != nil {
+		return MonthlyTraffic{}, err
+	}
+	now := time.Now()
+
+	s.trafficMu.Lock()
+	defer s.trafficMu.Unlock()
+
+	if err := s.refreshTrafficConfigLocked(now); err != nil {
+		return MonthlyTraffic{}, err
+	}
+	if s.trafficState == nil {
+		state, err := s.settingService.GetMonthlyTrafficState()
+		if err != nil {
+			return MonthlyTraffic{}, err
+		}
+		s.trafficState = state
+	}
+
+	localNow := now.In(s.trafficLocation)
+	periodStart := trafficPeriodStart(localNow, s.trafficResetDay)
+	periodKey := periodStart.Format("2006-01-02")
+	forcePersist := false
+	if s.trafficState.PeriodStart != periodKey {
+		s.trafficState.Initialized = false
+		s.trafficState.PeriodStart = periodKey
+		s.trafficState.UsedBytes = 0
+		s.trafficState.LastSent = sent
+		s.trafficState.LastRecv = received
+		forcePersist = true
+	}
+
+	if s.trafficLimitGB <= 0 {
+		if s.trafficState.Initialized || s.trafficState.UsedBytes != 0 {
+			forcePersist = true
+		}
+		s.trafficState.Initialized = false
+		s.trafficState.UsedBytes = 0
+		s.trafficState.LastSent = sent
+		s.trafficState.LastRecv = received
+		s.trafficSnapshot = MonthlyTraffic{
+			Enabled:     false,
+			ResetDay:    s.trafficResetDay,
+			PeriodStart: periodStart,
+			NextReset:   trafficNextReset(periodStart, s.trafficResetDay),
+		}
+	} else {
+		if !s.trafficState.Initialized {
+			s.trafficState.Initialized = true
+			s.trafficState.LastSent = sent
+			s.trafficState.LastRecv = received
+			forcePersist = true
+		} else {
+			s.trafficState.UsedBytes += trafficCounterDelta(sent, s.trafficState.LastSent)
+			s.trafficState.UsedBytes += trafficCounterDelta(received, s.trafficState.LastRecv)
+			s.trafficState.LastSent = sent
+			s.trafficState.LastRecv = received
+		}
+
+		limit := uint64(s.trafficLimitGB) * bytesPerGB
+		remaining := uint64(0)
+		if s.trafficState.UsedBytes < limit {
+			remaining = limit - s.trafficState.UsedBytes
+		}
+		percent := float64(0)
+		if limit > 0 {
+			percent = float64(s.trafficState.UsedBytes) / float64(limit) * 100
+			if percent > 100 {
+				percent = 100
+			}
+		}
+		s.trafficSnapshot = MonthlyTraffic{
+			Enabled:     true,
+			Limit:       limit,
+			Used:        s.trafficState.UsedBytes,
+			Remaining:   remaining,
+			Percent:     percent,
+			ResetDay:    s.trafficResetDay,
+			PeriodStart: periodStart,
+			NextReset:   trafficNextReset(periodStart, s.trafficResetDay),
+		}
+	}
+
+	if forcePersist || now.Sub(s.trafficLastPersist) >= 30*time.Second {
+		if err := s.settingService.SaveMonthlyTrafficState(s.trafficState); err != nil {
+			return MonthlyTraffic{}, err
+		}
+		s.trafficLastPersist = now
+	}
+	return s.trafficSnapshot, nil
 }
 
 func (s *ServerService) GetStatus(lastStatus *Status) *Status {
@@ -134,8 +359,8 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 		if lastStatus != nil {
 			duration := now.Sub(lastStatus.T)
 			seconds := float64(duration) / float64(time.Second)
-			up := uint64(float64(status.NetTraffic.Sent-lastStatus.NetTraffic.Sent) / seconds)
-			down := uint64(float64(status.NetTraffic.Recv-lastStatus.NetTraffic.Recv) / seconds)
+			up := uint64(float64(trafficCounterDelta(status.NetTraffic.Sent, lastStatus.NetTraffic.Sent)) / seconds)
+			down := uint64(float64(trafficCounterDelta(status.NetTraffic.Recv, lastStatus.NetTraffic.Recv)) / seconds)
 			status.NetIO.Up = up
 			status.NetIO.Down = down
 		}
@@ -166,6 +391,13 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 		status.Xray.ErrorMsg = s.xrayService.GetXrayResult()
 	}
 	status.Xray.Version = s.xrayService.GetXrayVersion()
+
+	monthlyTraffic, err := s.RefreshMonthlyTraffic()
+	if err != nil {
+		logger.Warning("refresh monthly traffic failed:", err)
+	} else {
+		status.MonthlyTraffic = monthlyTraffic
+	}
 
 	return status
 }

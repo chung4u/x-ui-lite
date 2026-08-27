@@ -35,6 +35,9 @@ type AllSetting struct {
 
 	XrayTemplateConfig string `json:"xrayTemplateConfig" form:"xrayTemplateConfig"`
 
+	TrafficLimitGB  int `json:"trafficLimitGB" form:"trafficLimitGB"`
+	TrafficResetDay int `json:"trafficResetDay" form:"trafficResetDay"`
+
 	TimeLocation string `json:"timeLocation" form:"timeLocation"`
 }
 
@@ -73,6 +76,13 @@ func (s *AllSetting) CheckValid() error {
 	_, err = time.LoadLocation(s.TimeLocation)
 	if err != nil {
 		return common.NewError("time location not exist:", s.TimeLocation)
+	}
+
+	if s.TrafficLimitGB < 0 {
+		return common.NewError("traffic limit must not be negative:", s.TrafficLimitGB)
+	}
+	if s.TrafficResetDay < 1 || s.TrafficResetDay > 31 {
+		return common.NewError("traffic reset day must be between 1 and 31:", s.TrafficResetDay)
 	}
 
 	return nil

@@ -1,8 +1,20 @@
 {{define "inboundModal"}}
-<a-modal id="inbound-modal" v-model="inModal.visible" :title="inModal.title" @ok="inModal.ok"
-         :confirm-loading="inModal.confirmLoading" :closable="true" :mask-closable="false"
-         :ok-text="inModal.okText" cancel-text='{{ i18n "close" }}'>
+<a-modal id="inbound-modal" :visible="inModal.visible" :title="inModal.title"
+         :closable="true" :mask-closable="false" :keyboard="false" :width="880"
+         wrap-class-name="inbound-modal-wrap" @cancel="inModal.requestClose">
+    <a-alert v-if="validationError" class="inbound-validation-alert" type="error" show-icon
+             message="无法保存当前配置" :description="validationError"></a-alert>
+    <div class="inbound-change-summary" v-if="changeSummary.length > 0">
+        <a-icon type="edit"></a-icon>
+        <span>本次将变更：[[ changeSummary.join('、') ]]</span>
+    </div>
     {{template "form/inbound"}}
+    <template slot="footer">
+        <a-button @click="inModal.requestClose">{{ i18n "close" }}</a-button>
+        <a-button type="primary" :loading="inModal.confirmLoading" @click="inModal.ok">
+            [[ inModal.okText ]]
+        </a-button>
+    </template>
 </a-modal>
 <script>
 
@@ -14,10 +26,69 @@
         confirm: null,
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
+        editingId: 0,
+        usedPorts: [],
+        baseline: '',
+        validationError: '',
+        currentState() {
+            return {
+                base: {
+                    remark: this.dbInbound.remark,
+                    enable: this.dbInbound.enable,
+                    total: this.dbInbound.total,
+                    expiryTime: this.dbInbound.expiryTime,
+                    listen: this.inbound.listen,
+                    port: this.inbound.port,
+                    protocol: this.inbound.protocol,
+                },
+                protocol: this.inbound.settings.toString(),
+                stream: this.inbound.stream.toString(),
+                sniffing: this.inbound.canSniffing() ? this.inbound.sniffing.toString() : '{}',
+            };
+        },
+        stateSignature() {
+            return JSON.stringify(this.currentState());
+        },
+        isDirty() {
+            return this.visible && this.baseline !== this.stateSignature();
+        },
+        changeSummary() {
+            if (!this.baseline) {
+                return [];
+            }
+            const before = JSON.parse(this.baseline);
+            const after = this.currentState();
+            const changes = [];
+            if (JSON.stringify(before.base) !== JSON.stringify(after.base)) changes.push('基础配置');
+            if (before.protocol !== after.protocol) changes.push('协议与认证');
+            if (before.stream !== after.stream) changes.push('传输与 TLS');
+            if (before.sniffing !== after.sniffing) changes.push('高级设置');
+            return changes;
+        },
+        validate() {
+            const port = Number(this.inbound.port);
+            if (!Number.isInteger(port) || port < 1 || port > 65535) {
+                return '端口必须是 1–65535 之间的整数。';
+            }
+            if (this.usedPorts.includes(port)) {
+                return `端口 ${port} 已被其他入站使用，请更换端口。`;
+            }
+            if (ObjectUtil.isEmpty(this.inbound.protocol)) {
+                return '请选择入站协议。';
+            }
+            if (!Number.isFinite(Number(this.dbInbound.totalGB)) || Number(this.dbInbound.totalGB) < 0) {
+                return '总流量限额不能小于 0。';
+            }
+            return '';
+        },
         ok() {
+            inModal.validationError = inModal.validate();
+            if (inModal.validationError) {
+                return;
+            }
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
-        show({ title='', okText='确定', inbound=null, dbInbound=null, confirm=(inbound, dbInbound)=>{} }) {
+        show({ title='', okText='确定', inbound=null, dbInbound=null, editingId=0, usedPorts=[], confirm=(inbound, dbInbound)=>{} }) {
             this.title = title;
             this.okText = okText;
             if (inbound) {
@@ -30,12 +101,32 @@
             } else {
                 this.dbInbound = new DBInbound();
             }
+            this.editingId = editingId;
+            this.usedPorts = usedPorts.map(port => Number(port));
             this.confirm = confirm;
+            this.validationError = '';
             this.visible = true;
+            this.baseline = this.stateSignature();
         },
         close() {
-            inModal.visible = false;
-            inModal.loading(false);
+            this.visible = false;
+            this.loading(false);
+            this.validationError = '';
+            this.baseline = '';
+        },
+        requestClose() {
+            if (!inModal.isDirty()) {
+                inModal.close();
+                return;
+            }
+            Vue.prototype.$confirm({
+                title: '放弃未保存的更改？',
+                content: '当前入站配置已修改，关闭后这些更改不会保留。',
+                okText: '放弃更改',
+                okType: 'danger',
+                cancelText: '继续编辑',
+                onOk: () => inModal.close(),
+            });
         },
         loading(loading) {
             inModal.confirmLoading = loading;
@@ -66,12 +157,33 @@
                 return inModal.dbInbound;
             }
         },
+        computed: {
+            validationError() {
+                return inModal.validationError;
+            },
+            changeSummary() {
+                return inModal.changeSummary();
+            },
+        },
         methods: {
             streamNetworkChange(oldValue) {
                 if (oldValue === 'kcp') {
                     this.inModal.inbound.tls = false;
                 }
             }
+        },
+        mounted() {
+            this.beforeUnloadHandler = event => {
+                if (!inModal.isDirty()) {
+                    return;
+                }
+                event.preventDefault();
+                event.returnValue = '';
+            };
+            window.addEventListener('beforeunload', this.beforeUnloadHandler);
+        },
+        beforeDestroy() {
+            window.removeEventListener('beforeunload', this.beforeUnloadHandler);
         }
     });
 

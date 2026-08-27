@@ -15,9 +15,6 @@
                     清晰掌控运行状态
                     <span>轻松管理每个节点</span>
                 </h1>
-                <p class="login-description">
-                    集中查看服务器资源、Xray 运行情况与入站配置，让日常运维更直观、更高效。
-                </p>
                 <div class="login-features" aria-label="核心能力">
                     <span class="login-feature"><a-icon type="dashboard"></a-icon> 实时状态</span>
                     <span class="login-feature"><a-icon type="cluster"></a-icon> 入站管理</span>
@@ -28,7 +25,6 @@
                 <div class="login-card">
                     <div class="login-card-kicker">Welcome back</div>
                     <h2 class="login-title">欢迎回来</h2>
-                    <p class="login-subtitle">请输入管理账号，继续访问控制面板。</p>
                     <a-form @submit.native.prevent="login">
                         <a-form-item>
                             <a-input v-model.trim="user.username" name="username" autocomplete="username"
@@ -56,7 +52,6 @@
                         连接已加密，请妥善保管管理凭据
                     </div>
                 </div>
-                <div class="login-copyright">X-UI · SECURE CONTROL PANEL</div>
             </section>
         </main>
     </transition>

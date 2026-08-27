@@ -2,6 +2,7 @@ package service
 
 import (
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -21,17 +22,28 @@ import (
 var xrayTemplateConfig string
 
 var defaultValueMap = map[string]string{
-	"xrayTemplateConfig": xrayTemplateConfig,
-	"webListen":          "",
-	"webPort":            "54321",
-	"webCertFile":        "",
-	"webKeyFile":         "",
-	"secret":             random.Seq(32),
-	"webBasePath":        "/",
-	"timeLocation":       "Asia/Shanghai",
+	"xrayTemplateConfig":  xrayTemplateConfig,
+	"webListen":           "",
+	"webPort":             "54321",
+	"webCertFile":         "",
+	"webKeyFile":          "",
+	"secret":              random.Seq(32),
+	"webBasePath":         "/",
+	"trafficLimitGB":      "0",
+	"trafficResetDay":     "1",
+	"trafficMonthlyState": "{}",
+	"timeLocation":        "Asia/Shanghai",
 }
 
 type SettingService struct {
+}
+
+type MonthlyTrafficState struct {
+	Initialized bool   `json:"initialized"`
+	PeriodStart string `json:"periodStart"`
+	UsedBytes   uint64 `json:"usedBytes"`
+	LastSent    uint64 `json:"lastSent"`
+	LastRecv    uint64 `json:"lastRecv"`
 }
 
 func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
@@ -166,6 +178,29 @@ func (s *SettingService) getInt(key string) (int, error) {
 
 func (s *SettingService) setInt(key string, value int) error {
 	return s.setString(key, strconv.Itoa(value))
+}
+
+func (s *SettingService) GetMonthlyTrafficState() (*MonthlyTrafficState, error) {
+	value, err := s.getString("trafficMonthlyState")
+	if err != nil {
+		return nil, err
+	}
+	state := &MonthlyTrafficState{}
+	if value == "" {
+		return state, nil
+	}
+	if err := json.Unmarshal([]byte(value), state); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (s *SettingService) SaveMonthlyTrafficState(state *MonthlyTrafficState) error {
+	value, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return s.setString("trafficMonthlyState", string(value))
 }
 
 func (s *SettingService) GetXrayConfigTemplate() (string, error) {
