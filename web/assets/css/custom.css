@@ -123,6 +123,43 @@ textarea {
     box-shadow: 0 0 0 4px rgba(25, 169, 116, .13);
 }
 
+.refresh-control {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 4px 4px 12px;
+    border: 1px solid var(--xui-line);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .82);
+}
+
+.refresh-copy {
+    display: flex;
+    flex-direction: column;
+    color: var(--xui-muted);
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.refresh-copy strong {
+    margin-top: 2px;
+    color: var(--xui-text);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.icon-button.ant-btn {
+    width: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: var(--xui-primary-soft);
+    color: var(--xui-primary);
+}
+
 .ant-space {
     width: 100%;
 }
@@ -211,6 +248,77 @@ textarea {
     color: var(--xui-muted);
     font-size: 12px;
     line-height: 1.55;
+}
+
+.resource-card {
+    height: 100%;
+    min-height: 164px;
+}
+
+.resource-card .ant-card-body {
+    display: flex;
+    min-height: 162px;
+    padding: 20px;
+    flex-direction: column;
+}
+
+.resource-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.resource-icon {
+    display: inline-flex;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--xui-primary-soft);
+    color: var(--xui-primary);
+    font-size: 17px;
+}
+
+.resource-icon.success {
+    background: #eaf8f2;
+    color: var(--xui-success);
+}
+
+.resource-icon.warning {
+    background: #fff6e7;
+    color: var(--xui-warning);
+}
+
+.resource-icon.violet {
+    background: #f3edff;
+    color: #8158dc;
+}
+
+.resource-value {
+    color: var(--xui-ink);
+    font-size: 25px;
+    font-weight: 750;
+    letter-spacing: -.03em;
+}
+
+.resource-label {
+    margin: 15px 0 8px;
+    color: var(--xui-ink);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.resource-detail {
+    margin-top: 6px;
+    overflow: hidden;
+    color: var(--xui-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .overview-card {
@@ -412,6 +520,118 @@ textarea {
 .table-toolbar-copy {
     color: var(--xui-muted);
     font-size: 13px;
+}
+
+.inbound-filter-bar {
+    display: grid;
+    margin: 0 0 16px;
+    gap: 10px;
+    grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(150px, 1fr));
+}
+
+.inbound-filter-bar .ant-input-affix-wrapper,
+.inbound-filter-bar .ant-select {
+    width: 100%;
+}
+
+.traffic-cell {
+    min-width: 210px;
+    text-align: left;
+}
+
+.traffic-values {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--xui-text);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.traffic-cell .ant-progress,
+.mobile-traffic-block .ant-progress {
+    display: block;
+    margin: 5px 0 1px;
+    line-height: 1;
+}
+
+.traffic-limit {
+    color: var(--xui-muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.traffic-limit.danger {
+    color: var(--xui-danger);
+    font-weight: 650;
+}
+
+.muted-text {
+    color: var(--xui-muted);
+}
+
+.inbound-mobile-list {
+    display: none;
+}
+
+.inbound-mobile-card {
+    padding: 17px;
+    border: 1px solid var(--xui-line);
+    border-radius: 15px;
+    background: #fff;
+}
+
+.inbound-mobile-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.inbound-mobile-title {
+    min-width: 0;
+}
+
+.inbound-mobile-title strong {
+    display: block;
+    overflow: hidden;
+    color: var(--xui-ink);
+    font-size: 15px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.inbound-mobile-title span {
+    display: block;
+    margin-top: 3px;
+    color: var(--xui-muted);
+    font-size: 11px;
+}
+
+.inbound-mobile-tags {
+    margin-top: 12px;
+}
+
+.mobile-traffic-block {
+    margin-top: 13px;
+    padding: 12px;
+    border-radius: 12px;
+    background: #f8faff;
+}
+
+.inbound-mobile-actions {
+    display: grid;
+    margin-top: 14px;
+    gap: 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.inbound-mobile-actions .ant-btn {
+    width: 100%;
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 12px;
 }
 
 .ant-modal-content {
@@ -994,6 +1214,14 @@ body.login-page {
 }
 
 @media (max-width: 1100px) {
+    .inbound-filter-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .inbound-filter-bar .ant-input-affix-wrapper {
+        grid-column: 1 / -1;
+    }
+
     .login-grid {
         gap: 46px;
         grid-template-columns: minmax(0, 1fr) minmax(360px, .8fr);
@@ -1024,12 +1252,34 @@ body.login-page {
         justify-content: flex-start;
     }
 
+    .refresh-control {
+        flex: 1;
+        justify-content: space-between;
+    }
+
     .metric-card {
         min-height: 220px;
     }
 
     .metric-card .ant-card-body {
         min-height: 218px;
+    }
+
+    .resource-card {
+        min-height: 150px;
+    }
+
+    .resource-card .ant-card-body {
+        min-height: 148px;
+        padding: 16px;
+    }
+
+    .resource-value {
+        font-size: 21px;
+    }
+
+    .resource-label {
+        margin-top: 12px;
     }
 
     .ant-card-body {
@@ -1050,6 +1300,23 @@ body.login-page {
 
     .table-toolbar .ant-btn {
         width: 100%;
+    }
+
+    .inbound-filter-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .desktop-inbound-table {
+        display: none;
+    }
+
+    .inbound-mobile-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .inbound-mobile-list .ant-empty {
+        padding: 32px 12px;
     }
 
     .settings-card .ant-tabs-bar,
@@ -1107,6 +1374,67 @@ body.login-page {
 
     .overview-card .ant-card-body {
         gap: 13px;
+    }
+
+    .inbound-summary-grid .overview-card {
+        min-height: 132px;
+    }
+
+    .inbound-summary-grid .overview-card .ant-card-body {
+        min-height: 130px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 9px;
+        padding: 14px;
+    }
+
+    .inbound-summary-grid .overview-icon {
+        width: 34px;
+        height: 34px;
+        flex-basis: 34px;
+        border-radius: 10px;
+        font-size: 15px;
+    }
+
+    .inbound-summary-grid .overview-value {
+        margin-top: 3px;
+        font-size: 18px;
+    }
+
+    .inbound-summary-grid .overview-content {
+        width: 100%;
+    }
+
+    .inbound-summary-grid .overview-meta {
+        font-size: 11px;
+    }
+
+    .resource-card .ant-card-body {
+        padding: 14px;
+    }
+
+    .resource-icon {
+        width: 34px;
+        height: 34px;
+        flex-basis: 34px;
+        font-size: 15px;
+    }
+
+    .resource-value {
+        font-size: 19px;
+    }
+
+    .resource-detail {
+        font-size: 11px;
+    }
+
+    .inbound-filter-bar,
+    .inbound-mobile-actions {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .inbound-filter-bar .ant-input-affix-wrapper {
+        grid-column: 1 / -1;
     }
 
     .login-grid {

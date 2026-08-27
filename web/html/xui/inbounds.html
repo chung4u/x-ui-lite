@@ -16,15 +16,23 @@
                                 <p class="page-subtitle">集中查看端口、协议、传输方式与流量使用情况，管理所有 Xray 入站配置。</p>
                             </div>
                             <div class="page-actions">
+                                <div class="refresh-control">
+                                    <span class="refresh-copy">
+                                        <span>配置更新</span>
+                                        <strong>[[ lastUpdatedLabel ]]</strong>
+                                    </span>
+                                    <a-button class="icon-button" icon="reload" :loading="refreshing"
+                                              aria-label="刷新入站配置" @click="getDBInbounds"></a-button>
+                                </div>
                                 <a-button type="primary" icon="plus" @click="openAddInbound">添加入站</a-button>
                             </div>
                         </header>
                     </transition>
 
                     <transition name="list" appear>
-                        <section aria-label="流量概览">
+                        <section class="inbound-summary-grid" aria-label="流量概览">
                             <a-row :gutter="16">
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon"><a-icon type="cloud-upload"></a-icon></div>
                                         <div class="overview-content">
@@ -34,7 +42,7 @@
                                         </div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon violet"><a-icon type="cloud-download"></a-icon></div>
                                         <div class="overview-content">
@@ -44,7 +52,7 @@
                                         </div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon success"><a-icon type="bar-chart"></a-icon></div>
                                         <div class="overview-content">
@@ -54,15 +62,15 @@
                                         </div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon warning"><a-icon type="cluster"></a-icon></div>
-                                        <div class="overview-content">
-                                            <div class="overview-label">入站数量</div>
-                                            <div class="overview-value">[[ dbInbounds.length ]]</div>
-                                            <div class="overview-meta">当前配置总数</div>
-                                        </div>
-                                    </a-card>
+                                            <div class="overview-icon warning"><a-icon type="cluster"></a-icon></div>
+                                            <div class="overview-content">
+                                                <div class="overview-label">入站数量</div>
+                                                <div class="overview-value">[[ dbInbounds.length ]]</div>
+                                                <div class="overview-meta">[[ enabledCount ]] 条已启用</div>
+                                            </div>
+                                        </a-card>
                                 </a-col>
                             </a-row>
                         </section>
@@ -73,68 +81,150 @@
                             <div class="table-toolbar">
                                 <div>
                                     <h2 class="section-title"><a-icon type="unordered-list"></a-icon>配置明细</h2>
-                                    <div class="table-toolbar-copy">启用、编辑或查看每一条入站配置</div>
+                                    <div class="table-toolbar-copy">[[ filteredSummary ]]</div>
                                 </div>
-                                <a-button type="primary" icon="plus" @click="openAddInbound">添加入站</a-button>
+                                <a-button v-if="hasActiveFilters" icon="undo" @click="resetFilters">重置筛选</a-button>
                             </div>
-                            <a-table :columns="columns" :row-key="dbInbound => dbInbound.id"
-                                     :data-source="dbInbounds" :loading="spinning"
-                                     :scroll="{ x: 1226 }" :pagination="false"
-                                     @change="() => getDBInbounds()">
-                                <template slot="action" slot-scope="text, dbInbound">
-                                    <a-dropdown :trigger="['click']">
-                                        <a-button size="small" @click="e => e.preventDefault()">
-                                            管理 <a-icon type="down"></a-icon>
-                                        </a-button>
-                                        <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
-                                            <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
-                                                <a-icon type="qrcode"></a-icon>二维码
-                                            </a-menu-item>
-                                            <a-menu-item key="edit">
-                                                <a-icon type="edit"></a-icon>编辑配置
-                                            </a-menu-item>
-                                            <a-menu-item key="resetTraffic">
-                                                <a-icon type="retweet"></a-icon>重置流量
-                                            </a-menu-item>
-                                            <a-menu-item key="delete">
-                                                <span style="color: #e45454"><a-icon type="delete"></a-icon>删除入站</span>
-                                            </a-menu-item>
-                                        </a-menu>
-                                    </a-dropdown>
-                                </template>
-                                <template slot="protocol" slot-scope="text, dbInbound">
-                                    <a-tag color="blue">[[ dbInbound.protocol ]]</a-tag>
-                                </template>
-                                <template slot="traffic" slot-scope="text, dbInbound">
-                                    <a-tag color="blue">↑ [[ sizeFormat(dbInbound.up) ]] · ↓ [[ sizeFormat(dbInbound.down) ]]</a-tag>
-                                    <template v-if="dbInbound.total > 0">
-                                        <a-tag v-if="dbInbound.up + dbInbound.down < dbInbound.total" color="cyan">限额 [[ sizeFormat(dbInbound.total) ]]</a-tag>
-                                        <a-tag v-else color="red">已用尽 [[ sizeFormat(dbInbound.total) ]]</a-tag>
+                            <div class="inbound-filter-bar" aria-label="入站筛选条件">
+                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口、协议或 ID">
+                                    <a-icon slot="prefix" type="search"></a-icon>
+                                </a-input>
+                                <a-select v-model="filters.protocol" aria-label="按协议筛选">
+                                    <a-select-option value="all">全部协议</a-select-option>
+                                    <a-select-option v-for="protocol in protocolOptions" :key="protocol" :value="protocol">
+                                        [[ protocol.toUpperCase() ]]
+                                    </a-select-option>
+                                </a-select>
+                                <a-select v-model="filters.status" aria-label="按启用状态筛选">
+                                    <a-select-option value="all">全部状态</a-select-option>
+                                    <a-select-option value="enabled">仅看已启用</a-select-option>
+                                    <a-select-option value="disabled">仅看已停用</a-select-option>
+                                </a-select>
+                                <a-select v-model="filters.sort" aria-label="入站排序方式">
+                                    <a-select-option value="id-asc">按 ID 排序</a-select-option>
+                                    <a-select-option value="traffic-desc">流量从高到低</a-select-option>
+                                    <a-select-option value="port-asc">端口从小到大</a-select-option>
+                                    <a-select-option value="port-desc">端口从大到小</a-select-option>
+                                    <a-select-option value="remark-asc">按备注名称</a-select-option>
+                                </a-select>
+                            </div>
+
+                            <div class="desktop-inbound-table">
+                                <a-table :columns="columns" :row-key="dbInbound => dbInbound.id"
+                                         :data-source="displayedInbounds" :loading="refreshing"
+                                         :scroll="{ x: 1260 }" :pagination="false"
+                                         :locale="{ emptyText: emptyStateText }">
+                                    <template slot="action" slot-scope="text, dbInbound">
+                                        <a-dropdown :trigger="['click']">
+                                            <a-button size="small" @click="e => e.preventDefault()">
+                                                管理 <a-icon type="down"></a-icon>
+                                            </a-button>
+                                            <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
+                                                <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
+                                                    <a-icon type="qrcode"></a-icon>二维码与复制
+                                                </a-menu-item>
+                                                <a-menu-item key="edit">
+                                                    <a-icon type="edit"></a-icon>编辑配置
+                                                </a-menu-item>
+                                                <a-menu-item key="resetTraffic">
+                                                    <a-icon type="retweet"></a-icon>重置流量
+                                                </a-menu-item>
+                                                <a-menu-item key="delete">
+                                                    <span style="color: #e45454"><a-icon type="delete"></a-icon>删除入站</span>
+                                                </a-menu-item>
+                                            </a-menu>
+                                        </a-dropdown>
                                     </template>
-                                    <a-tag v-else color="green">无限制</a-tag>
-                                </template>
-                                <template slot="settings" slot-scope="text, dbInbound">
-                                    <a-button type="link" @click="showInfo(dbInbound)">查看详情</a-button>
-                                </template>
-                                <template slot="stream" slot-scope="text, dbInbound, index">
-                                    <template v-if="dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS">
-                                        <a-tag color="green">[[ inbounds[index].stream.network ]]</a-tag>
-                                        <a-tag v-if="inbounds[index].stream.isTls" color="blue">TLS</a-tag>
-                                        <a-tag v-if="inbounds[index].stream.isXTls" color="blue">XTLS</a-tag>
+                                    <template slot="protocol" slot-scope="text, dbInbound">
+                                        <a-tag :color="protocolColor(dbInbound.protocol)">[[ dbInbound.protocol.toUpperCase() ]]</a-tag>
                                     </template>
-                                    <span v-else style="color: #8591a6">无</span>
-                                </template>
-                                <template slot="enable" slot-scope="text, dbInbound">
-                                    <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
-                                </template>
-                                <template slot="expiryTime" slot-scope="text, dbInbound">
-                                    <template v-if="dbInbound.expiryTime > 0">
-                                        <a-tag v-if="dbInbound.isExpiry" color="red">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
-                                        <a-tag v-else color="blue">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
+                                    <template slot="traffic" slot-scope="text, dbInbound">
+                                        <div class="traffic-cell">
+                                            <div class="traffic-values">
+                                                <span>↑ [[ sizeFormat(dbInbound.up) ]]</span>
+                                                <span>↓ [[ sizeFormat(dbInbound.down) ]]</span>
+                                            </div>
+                                            <a-progress v-if="dbInbound.total > 0" :show-info="false" :stroke-width="6"
+                                                        :stroke-color="trafficColor(dbInbound)"
+                                                        :percent="trafficPercent(dbInbound)"></a-progress>
+                                            <div class="traffic-limit" :class="{ danger: trafficPercent(dbInbound) >= 100 }">
+                                                [[ trafficLimitLabel(dbInbound) ]]
+                                            </div>
+                                        </div>
                                     </template>
-                                    <a-tag v-else color="green">无限期</a-tag>
-                                </template>
-                            </a-table>
+                                    <template slot="settings" slot-scope="text, dbInbound">
+                                        <a-button type="link" @click="showInfo(dbInbound)">查看详情</a-button>
+                                    </template>
+                                    <template slot="stream" slot-scope="text, dbInbound">
+                                        <template v-if="inboundById[dbInbound.id] && (dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS)">
+                                            <a-tag color="green">[[ streamLabel(dbInbound) ]]</a-tag>
+                                            <a-tag v-if="inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
+                                            <a-tag v-if="inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
+                                        </template>
+                                        <span v-else class="muted-text">无</span>
+                                    </template>
+                                    <template slot="enable" slot-scope="text, dbInbound">
+                                        <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
+                                    </template>
+                                    <template slot="expiryTime" slot-scope="text, dbInbound">
+                                        <template v-if="dbInbound.expiryTime > 0">
+                                            <a-tag v-if="dbInbound.isExpiry" color="red">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
+                                            <a-tag v-else color="blue">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
+                                        </template>
+                                        <a-tag v-else color="green">无限期</a-tag>
+                                    </template>
+                                </a-table>
+                            </div>
+
+                            <div class="inbound-mobile-list">
+                                <a-empty v-if="displayedInbounds.length === 0" :description="emptyStateText">
+                                    <a-button v-if="dbInbounds.length === 0" type="primary" icon="plus" @click="openAddInbound">
+                                        创建第一个入站
+                                    </a-button>
+                                </a-empty>
+                                <article v-for="dbInbound in displayedInbounds" :key="dbInbound.id" class="inbound-mobile-card">
+                                    <div class="inbound-mobile-head">
+                                        <div class="inbound-mobile-title">
+                                            <strong>[[ dbInbound.remark || '未命名入站' ]]</strong>
+                                            <span># [[ dbInbound.id ]]</span>
+                                        </div>
+                                        <a-switch v-model="dbInbound.enable" @change="switchEnable(dbInbound)"></a-switch>
+                                    </div>
+                                    <div class="inbound-mobile-tags">
+                                        <a-tag :color="protocolColor(dbInbound.protocol)">[[ dbInbound.protocol.toUpperCase() ]]</a-tag>
+                                        <a-tag color="cyan">端口 [[ dbInbound.port ]]</a-tag>
+                                        <a-tag v-if="streamLabel(dbInbound) !== '无'" color="green">[[ streamLabel(dbInbound) ]]</a-tag>
+                                        <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
+                                        <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
+                                    </div>
+                                    <div class="mobile-traffic-block">
+                                        <div class="traffic-values">
+                                            <span>上传 [[ sizeFormat(dbInbound.up) ]]</span>
+                                            <span>下载 [[ sizeFormat(dbInbound.down) ]]</span>
+                                        </div>
+                                        <a-progress v-if="dbInbound.total > 0" :show-info="false" :stroke-width="6"
+                                                    :stroke-color="trafficColor(dbInbound)"
+                                                    :percent="trafficPercent(dbInbound)"></a-progress>
+                                        <div class="traffic-limit" :class="{ danger: trafficPercent(dbInbound) >= 100 }">
+                                            [[ trafficLimitLabel(dbInbound) ]] · [[ expiryLabel(dbInbound) ]]
+                                        </div>
+                                    </div>
+                                    <div class="inbound-mobile-actions">
+                                        <a-button v-if="dbInbound.hasLink()" icon="qrcode" @click="showQrcode(dbInbound)">分享</a-button>
+                                        <a-button icon="edit" @click="openEditInbound(dbInbound)">编辑</a-button>
+                                        <a-button icon="info-circle" @click="showInfo(dbInbound)">详情</a-button>
+                                        <a-dropdown :trigger="['click']">
+                                            <a-button icon="more">更多</a-button>
+                                            <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
+                                                <a-menu-item key="resetTraffic"><a-icon type="retweet"></a-icon>重置流量</a-menu-item>
+                                                <a-menu-item key="delete">
+                                                    <span style="color: #e45454"><a-icon type="delete"></a-icon>删除入站</span>
+                                                </a-menu-item>
+                                            </a-menu>
+                                        </a-dropdown>
+                                    </div>
+                                </article>
+                            </div>
                         </a-card>
                     </transition>
                 </div>
@@ -146,11 +236,6 @@
 <script>
 
     const columns = [{
-        title: "操作",
-        align: 'center',
-        width: 88,
-        scopedSlots: { customRender: 'action' },
-    }, {
         title: "启用",
         align: 'center',
         width: 72,
@@ -195,6 +280,12 @@
         align: 'center',
         width: 132,
         scopedSlots: { customRender: 'expiryTime' },
+    }, {
+        title: "操作",
+        align: 'center',
+        width: 92,
+        fixed: 'right',
+        scopedSlots: { customRender: 'action' },
     }];
 
     const app = new Vue({
@@ -203,43 +294,109 @@
         data: {
             siderDrawer,
             spinning: false,
-            inbounds: [],
+            refreshing: false,
+            hasLoaded: false,
+            lastUpdatedAt: null,
             dbInbounds: [],
-            searchKey: '',
+            inboundById: {},
+            filters: {
+                query: '',
+                protocol: 'all',
+                status: 'all',
+                sort: 'id-asc',
+            },
         },
         methods: {
             loading(spinning=true) {
                 this.spinning = spinning;
             },
             async getDBInbounds() {
-                this.loading();
-                const msg = await HttpUtil.post('/xui/inbound/list');
-                this.loading(false);
-                if (!msg.success) {
-                    return;
+                const initialLoad = !this.hasLoaded;
+                if (initialLoad) {
+                    this.loading(true);
+                } else {
+                    this.refreshing = true;
                 }
-                this.setInbounds(msg.obj);
+                try {
+                    const msg = await HttpUtil.post('/xui/inbound/list');
+                    if (!msg.success) {
+                        return;
+                    }
+                    this.setInbounds(msg.obj);
+                    this.lastUpdatedAt = new Date();
+                    this.hasLoaded = true;
+                } finally {
+                    this.loading(false);
+                    this.refreshing = false;
+                }
             },
             setInbounds(dbInbounds) {
-                this.inbounds.splice(0);
                 this.dbInbounds.splice(0);
+                this.inboundById = {};
                 for (const inbound of dbInbounds) {
                     const dbInbound = new DBInbound(inbound);
-                    this.inbounds.push(dbInbound.toInbound());
                     this.dbInbounds.push(dbInbound);
+                    this.$set(this.inboundById, dbInbound.id, dbInbound.toInbound());
                 }
             },
-            searchInbounds(key) {
-                if (ObjectUtil.isEmpty(key)) {
-                    this.searchedInbounds = this.dbInbounds.slice();
-                } else {
-                    this.searchedInbounds.splice(0, this.searchedInbounds.length);
-                    this.dbInbounds.forEach(inbound => {
-                        if (ObjectUtil.deepSearch(inbound, key)) {
-                            this.searchedInbounds.push(inbound);
-                        }
-                    });
+            resetFilters() {
+                this.filters.query = '';
+                this.filters.protocol = 'all';
+                this.filters.status = 'all';
+                this.filters.sort = 'id-asc';
+            },
+            protocolColor(protocol) {
+                const colors = {
+                    vmess: 'blue',
+                    vless: 'geekblue',
+                    trojan: 'purple',
+                    shadowsocks: 'cyan',
+                    socks: 'orange',
+                    http: 'green',
+                };
+                return colors[protocol] || 'default';
+            },
+            trafficPercent(dbInbound) {
+                if (dbInbound.total <= 0) {
+                    return 0;
                 }
+                return Math.min(100, toFixed((dbInbound.up + dbInbound.down) / dbInbound.total * 100, 1));
+            },
+            trafficColor(dbInbound) {
+                const percent = this.trafficPercent(dbInbound);
+                if (percent >= 100) {
+                    return '#e45454';
+                }
+                if (percent >= 80) {
+                    return '#e29a28';
+                }
+                return '#4f7cff';
+            },
+            trafficLimitLabel(dbInbound) {
+                if (dbInbound.total <= 0) {
+                    return '流量无限制';
+                }
+                const used = dbInbound.up + dbInbound.down;
+                if (used >= dbInbound.total) {
+                    return `限额已用尽 · ${sizeFormat(dbInbound.total)}`;
+                }
+                return `已用 ${this.trafficPercent(dbInbound)}% · 限额 ${sizeFormat(dbInbound.total)}`;
+            },
+            streamLabel(dbInbound) {
+                const inbound = this.inboundById[dbInbound.id];
+                if (inbound == null || !(dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS)) {
+                    return '无';
+                }
+                return inbound.stream.network || 'tcp';
+            },
+            expiryLabel(dbInbound) {
+                if (dbInbound.expiryTime <= 0) {
+                    return '无限期';
+                }
+                if (dbInbound.isExpiry) {
+                    return `已于 ${DateUtil.formatMillis(dbInbound.expiryTime)} 到期`;
+                }
+                return `${DateUtil.formatMillis(dbInbound.expiryTime)} 到期`;
             },
             clickAction(action, dbInbound) {
                 switch (action.key) {
@@ -358,15 +515,77 @@
                 }
             },
         },
-        watch: {
-            searchKey(value) {
-                this.searchInbounds(value);
-            }
-        },
         mounted() {
             this.getDBInbounds();
         },
         computed: {
+            lastUpdatedLabel() {
+                if (this.lastUpdatedAt == null) {
+                    return '等待首次更新';
+                }
+                return moment(this.lastUpdatedAt).format('HH:mm:ss');
+            },
+            enabledCount() {
+                return this.dbInbounds.filter(inbound => inbound.enable).length;
+            },
+            protocolOptions() {
+                return Array.from(new Set(this.dbInbounds.map(inbound => inbound.protocol))).sort();
+            },
+            hasActiveFilters() {
+                return this.filters.query !== '' || this.filters.protocol !== 'all' ||
+                    this.filters.status !== 'all' || this.filters.sort !== 'id-asc';
+            },
+            displayedInbounds() {
+                const query = this.filters.query.trim().toLowerCase();
+                const list = this.dbInbounds.filter(inbound => {
+                    if (this.filters.protocol !== 'all' && inbound.protocol !== this.filters.protocol) {
+                        return false;
+                    }
+                    if (this.filters.status === 'enabled' && !inbound.enable) {
+                        return false;
+                    }
+                    if (this.filters.status === 'disabled' && inbound.enable) {
+                        return false;
+                    }
+                    if (query !== '') {
+                        const searchable = [inbound.id, inbound.remark, inbound.protocol, inbound.port, inbound.listen, inbound.tag]
+                            .join(' ').toLowerCase();
+                        if (!searchable.includes(query)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+                return list.slice().sort((a, b) => {
+                    switch (this.filters.sort) {
+                        case 'traffic-desc':
+                            return (b.up + b.down) - (a.up + a.down);
+                        case 'port-asc':
+                            return a.port - b.port;
+                        case 'port-desc':
+                            return b.port - a.port;
+                        case 'remark-asc':
+                            return (a.remark || '').localeCompare(b.remark || '', 'zh-CN');
+                        default:
+                            return a.id - b.id;
+                    }
+                });
+            },
+            filteredSummary() {
+                if (this.dbInbounds.length === 0) {
+                    return '当前还没有入站配置';
+                }
+                if (this.displayedInbounds.length === this.dbInbounds.length) {
+                    return `共 ${this.dbInbounds.length} 条配置，可筛选、排序或管理`;
+                }
+                return `已显示 ${this.displayedInbounds.length} / ${this.dbInbounds.length} 条配置`;
+            },
+            emptyStateText() {
+                if (this.dbInbounds.length === 0) {
+                    return '暂无入站配置，请创建第一个入站';
+                }
+                return '没有符合当前筛选条件的入站配置';
+            },
             total() {
                 let down = 0, up = 0;
                 for (let i = 0; i < this.dbInbounds.length; ++i) {

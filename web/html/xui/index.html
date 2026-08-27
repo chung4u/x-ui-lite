@@ -21,6 +21,14 @@
                                     服务运行正常
                                 </div>
                                 <a-tag v-else :color="status.xray.color">Xray [[ status.xray.state ]]</a-tag>
+                                <div class="refresh-control">
+                                    <span class="refresh-copy">
+                                        <span>数据更新</span>
+                                        <strong>[[ lastUpdatedLabel ]]</strong>
+                                    </span>
+                                    <a-button class="icon-button" icon="sync" :loading="refreshing"
+                                              aria-label="立即刷新系统状态" @click="getStatus(true)"></a-button>
+                                </div>
                             </div>
                         </header>
                     </transition>
@@ -28,40 +36,52 @@
                     <transition name="list" appear>
                         <section aria-label="资源使用情况">
                             <a-row :gutter="16">
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="metric-card" hoverable>
-                                        <a-progress type="dashboard" status="normal" :width="122"
-                                                    :stroke-width="8" :stroke-color="status.cpu.color"
-                                                    :percent="status.cpu.percent"></a-progress>
-                                        <div class="metric-label">处理器</div>
-                                        <div class="metric-detail">CPU 实时使用率</div>
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="resource-card" hoverable>
+                                        <div class="resource-card-head">
+                                            <div class="resource-icon"><a-icon type="dashboard"></a-icon></div>
+                                            <div class="resource-value">[[ status.cpu.percent ]]%</div>
+                                        </div>
+                                        <div class="resource-label">处理器</div>
+                                        <a-progress :show-info="false" :stroke-width="7"
+                                                    :stroke-color="status.cpu.color" :percent="status.cpu.percent"></a-progress>
+                                        <div class="resource-detail">CPU 实时使用率</div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="metric-card" hoverable>
-                                        <a-progress type="dashboard" status="normal" :width="122"
-                                                    :stroke-width="8" :stroke-color="status.mem.color"
-                                                    :percent="status.mem.percent"></a-progress>
-                                        <div class="metric-label">运行内存</div>
-                                        <div class="metric-detail">[[ sizeFormat(status.mem.current) ]] / [[ sizeFormat(status.mem.total) ]]</div>
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="resource-card" hoverable>
+                                        <div class="resource-card-head">
+                                            <div class="resource-icon success"><a-icon type="database"></a-icon></div>
+                                            <div class="resource-value">[[ status.mem.percent ]]%</div>
+                                        </div>
+                                        <div class="resource-label">运行内存</div>
+                                        <a-progress :show-info="false" :stroke-width="7"
+                                                    :stroke-color="status.mem.color" :percent="status.mem.percent"></a-progress>
+                                        <div class="resource-detail">[[ sizeFormat(status.mem.current) ]] / [[ sizeFormat(status.mem.total) ]]</div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="metric-card" hoverable>
-                                        <a-progress type="dashboard" status="normal" :width="122"
-                                                    :stroke-width="8" :stroke-color="status.swap.color"
-                                                    :percent="status.swap.percent"></a-progress>
-                                        <div class="metric-label">交换空间</div>
-                                        <div class="metric-detail">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="resource-card" hoverable>
+                                        <div class="resource-card-head">
+                                            <div class="resource-icon violet"><a-icon type="hdd"></a-icon></div>
+                                            <div class="resource-value">[[ status.swap.percent ]]%</div>
+                                        </div>
+                                        <div class="resource-label">交换空间</div>
+                                        <a-progress :show-info="false" :stroke-width="7"
+                                                    :stroke-color="status.swap.color" :percent="status.swap.percent"></a-progress>
+                                        <div class="resource-detail">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="24" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="metric-card" hoverable>
-                                        <a-progress type="dashboard" status="normal" :width="122"
-                                                    :stroke-width="8" :stroke-color="status.disk.color"
-                                                    :percent="status.disk.percent"></a-progress>
-                                        <div class="metric-label">磁盘空间</div>
-                                        <div class="metric-detail">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
+                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                    <a-card class="resource-card" hoverable>
+                                        <div class="resource-card-head">
+                                            <div class="resource-icon warning"><a-icon type="pie-chart"></a-icon></div>
+                                            <div class="resource-value">[[ status.disk.percent ]]%</div>
+                                        </div>
+                                        <div class="resource-label">磁盘空间</div>
+                                        <a-progress :show-info="false" :stroke-width="7"
+                                                    :stroke-color="status.disk.color" :percent="status.disk.percent"></a-progress>
+                                        <div class="resource-detail">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
                                     </a-card>
                                 </a-col>
                             </a-row>
@@ -94,21 +114,14 @@
                                 </a-col>
                                 <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon"><a-icon type="clock-circle"></a-icon></div>
+                                        <div class="overview-icon"><a-icon type="swap"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">系统运行时间</div>
-                                            <div class="overview-value">[[ formatSecond(status.uptime) ]]</div>
-                                            <div class="overview-meta">自本次系统启动后累计</div>
-                                        </div>
-                                    </a-card>
-                                </a-col>
-                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
-                                    <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon warning"><a-icon type="fund"></a-icon></div>
-                                        <div class="overview-content">
-                                            <div class="overview-label">系统负载</div>
-                                            <div class="overview-value">[[ status.loads[0] ]] · [[ status.loads[1] ]] · [[ status.loads[2] ]]</div>
-                                            <div class="overview-meta">1 分钟 / 5 分钟 / 15 分钟</div>
+                                            <div class="overview-label">实时网速</div>
+                                            <div class="overview-value split-value">
+                                                <span class="split-value-item"><a-icon type="arrow-up"></a-icon>[[ sizeFormat(status.netIO.up) ]]/s</span>
+                                                <span class="split-value-item"><a-icon type="arrow-down"></a-icon>[[ sizeFormat(status.netIO.down) ]]/s</span>
+                                            </div>
+                                            <div class="overview-meta">上传 / 下载</div>
                                         </div>
                                     </a-card>
                                 </a-col>
@@ -124,14 +137,21 @@
                                 </a-col>
                                 <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon"><a-icon type="swap"></a-icon></div>
+                                        <div class="overview-icon"><a-icon type="clock-circle"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">实时网速</div>
-                                            <div class="overview-value split-value">
-                                                <span class="split-value-item"><a-icon type="arrow-up"></a-icon>[[ sizeFormat(status.netIO.up) ]]/s</span>
-                                                <span class="split-value-item"><a-icon type="arrow-down"></a-icon>[[ sizeFormat(status.netIO.down) ]]/s</span>
-                                            </div>
-                                            <div class="overview-meta">上传 / 下载</div>
+                                            <div class="overview-label">系统运行时间</div>
+                                            <div class="overview-value">[[ formatSecond(status.uptime) ]]</div>
+                                            <div class="overview-meta">自本次系统启动后累计</div>
+                                        </div>
+                                    </a-card>
+                                </a-col>
+                                <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable>
+                                        <div class="overview-icon warning"><a-icon type="fund"></a-icon></div>
+                                        <div class="overview-content">
+                                            <div class="overview-label">系统负载</div>
+                                            <div class="overview-value">[[ status.loads[0] ]] · [[ status.loads[1] ]] · [[ status.loads[2] ]]</div>
+                                            <div class="overview-meta">1 分钟 / 5 分钟 / 15 分钟</div>
                                         </div>
                                     </a-card>
                                 </a-col>
@@ -269,16 +289,32 @@
             versionModal,
             spinning: false,
             loadingTip: '加载中',
+            refreshing: false,
+            statusRequestInFlight: false,
+            lastUpdatedAt: null,
         },
         methods: {
             loading(spinning, tip = '加载中') {
                 this.spinning = spinning;
                 this.loadingTip = tip;
             },
-            async getStatus() {
-                const msg = await HttpUtil.post('/server/status');
-                if (msg.success) {
-                    this.setStatus(msg.obj);
+            async getStatus(manual = false) {
+                if (this.statusRequestInFlight) {
+                    return;
+                }
+                this.statusRequestInFlight = true;
+                if (manual) {
+                    this.refreshing = true;
+                }
+                try {
+                    const msg = await HttpUtil.post('/server/status');
+                    if (msg.success) {
+                        this.setStatus(msg.obj);
+                        this.lastUpdatedAt = new Date();
+                    }
+                } finally {
+                    this.statusRequestInFlight = false;
+                    this.refreshing = false;
                 }
             },
             setStatus(data) {
@@ -306,6 +342,14 @@
                         this.loading(false);
                     },
                 });
+            },
+        },
+        computed: {
+            lastUpdatedLabel() {
+                if (this.lastUpdatedAt == null) {
+                    return '等待首次更新';
+                }
+                return moment(this.lastUpdatedAt).format('HH:mm:ss');
             },
         },
         async mounted() {
