@@ -56,11 +56,11 @@
                             <a-tabs v-model="activeTab">
                                 <a-tab-pane key="1" tab="面板配置">
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，保存并重启面板后生效" v-model="allSetting.webListen"></setting-list-item>
-                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口，保存并重启面板后生效" v-model.number="allSetting.webPort"></setting-list-item>
-                                        <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webCertFile"></setting-list-item>
-                                        <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webKeyFile"></setting-list-item>
-                                        <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾，保存并重启面板后生效" v-model="allSetting.webBasePath"></setting-list-item>
+                                        <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，保存并重启面板后生效" v-model="allSetting.webListen" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口，保存并重启面板后生效" v-model.number="allSetting.webPort" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webCertFile" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webKeyFile" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾，保存并重启面板后生效" v-model="allSetting.webBasePath" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
                                 <a-tab-pane key="2" tab="用户设置">
@@ -84,21 +84,21 @@
                                 </a-tab-pane>
                                 <a-tab-pane key="3" tab="Xray 设置">
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="textarea" title="Xray 配置模板" desc="系统会基于此模板生成最终配置，保存并重启面板后生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
+                                        <setting-list-item type="textarea" title="Xray 配置模板" desc="系统会基于此模板生成最终配置，保存并重启面板后生效" v-model="allSetting.xrayTemplateConfig" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
-                                <a-tab-pane key="4" tab="服务器流量">
+                                <a-tab-pane key="4" tab="流量监控">
                                     <a-alert class="settings-inline-alert" type="info" show-icon
                                              message="月度流量从启用设置后开始计量"
                                              description="统计服务器默认出口网卡的上传与下载总量，到达每月重置日后自动开始新的周期。"></a-alert>
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="number" title="月度总额度 (GB)" desc="0 表示关闭月度流量显示；保存后约 10 秒生效，无需重启面板" v-model.number="allSetting.trafficLimitGB"></setting-list-item>
-                                        <setting-list-item type="number" title="每月重置日" desc="可设置 1–31 日；月份天数不足时按该月最后一天 00:00 自动清零" v-model.number="allSetting.trafficResetDay"></setting-list-item>
+                                        <setting-list-item type="number" title="月度总额度 (GB)" desc="0 表示关闭月度流量显示；保存后约 10 秒生效，无需重启面板" v-model.number="allSetting.trafficLimitGB" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="number" title="每月重置日" desc="可设置 1–31 日；月份天数不足时按该月最后一天 00:00 自动清零" v-model.number="allSetting.trafficResetDay" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
                                 <a-tab-pane key="5" tab="其他设置">
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="text" title="时区" desc="定时任务将按照该时区运行，保存并重启面板后生效" v-model="allSetting.timeLocation"></setting-list-item>
+                                        <setting-list-item type="text" title="时区" desc="定时任务将按照该时区运行，保存并重启面板后生效" v-model="allSetting.timeLocation" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
                             </a-tabs>
@@ -161,10 +161,14 @@
             restarting: false,
             settingsLoadError: false,
             activeTab: '1',
+            settingsRevision: 0,
         },
         methods: {
             loading(spinning = true) {
                 this.spinning = spinning;
+            },
+            touchSettings() {
+                this.settingsRevision += 1;
             },
             async getAllSetting(showLoading = true) {
                 if (showLoading) this.loading(true);
@@ -305,10 +309,20 @@
         },
         computed: {
             saveBtnDisable() {
-                return this.oldAllSetting.equals(this.allSetting);
+                return this.changedSettingKeys.length === 0;
             },
-            changedSettingLabels() {
-                const labels = {
+            changedSettingKeys() {
+                this.settingsRevision;
+                const numericKeys = ['webPort', 'trafficLimitGB', 'trafficResetDay'];
+                return Object.keys(this.settingLabels).filter(key => {
+                    if (numericKeys.includes(key)) {
+                        return Number(this.oldAllSetting[key]) !== Number(this.allSetting[key]);
+                    }
+                    return this.oldAllSetting[key] !== this.allSetting[key];
+                });
+            },
+            settingLabels() {
+                return {
                     webListen: '监听 IP',
                     webPort: '监听端口',
                     webCertFile: '证书公钥',
@@ -319,9 +333,9 @@
                     trafficResetDay: '流量重置日',
                     timeLocation: '时区',
                 };
-                return Object.keys(labels)
-                    .filter(key => this.oldAllSetting[key] !== this.allSetting[key])
-                    .map(key => labels[key]);
+            },
+            changedSettingLabels() {
+                return this.changedSettingKeys.map(key => this.settingLabels[key]);
             },
             connectivityChangeLabels() {
                 const risky = ['监听 IP', '监听端口', '证书公钥', '证书密钥', '访问路径'];

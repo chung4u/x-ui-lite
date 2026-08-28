@@ -111,6 +111,32 @@ textarea {
     box-shadow: var(--xui-shadow);
 }
 
+.health-banner.health-banner-compact {
+    min-height: 0;
+    padding: 14px 18px;
+}
+
+.health-healthy-state {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.health-healthy-state i {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    border-radius: 50%;
+    background: var(--xui-success);
+    box-shadow: 0 0 0 4px rgba(25, 169, 116, .13);
+}
+
+.health-healthy-state strong {
+    color: #187b59;
+    font-size: 14px;
+    font-weight: 700;
+}
+
 .health-banner-top {
     display: flex;
     align-items: center;
@@ -168,14 +194,6 @@ textarea {
     color: var(--xui-danger);
 }
 
-.health-banner-label {
-    margin-bottom: 3px;
-    color: var(--xui-muted);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .08em;
-}
-
 .health-banner h2 {
     margin: 0;
     color: var(--xui-ink);
@@ -191,84 +209,81 @@ textarea {
 }
 
 .health-issue-list {
-    display: flex;
-    max-width: 52%;
-    justify-content: flex-end;
-    gap: 4px;
-    flex-wrap: wrap;
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.health-issue-link {
+.health-issue-item {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 11px;
+    padding: 12px 13px;
+    border: 1px solid #f0dfbd;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .82);
+}
+
+.health-issue-item.danger {
+    border-color: #f1d3d3;
+}
+
+.health-issue-item.actionable {
     cursor: pointer;
 }
 
-.health-monitor-grid {
-    display: grid;
-    gap: 8px;
-    margin-top: 18px;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+.health-issue-item.actionable:hover,
+.health-issue-item.actionable:focus-visible {
+    border-color: #c6d4f4;
+    box-shadow: 0 8px 20px rgba(40, 60, 105, .08);
+    outline: none;
 }
 
-.health-monitor-point {
+.health-issue-icon {
+    display: flex;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background: #fff1d8;
+    color: var(--xui-warning);
+}
+
+.health-issue-item.danger .health-issue-icon {
+    background: #fde8e8;
+    color: var(--xui-danger);
+}
+
+.health-issue-copy {
     display: flex;
     min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px 12px;
-    border: 1px solid var(--xui-line);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, .78);
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
 }
 
-.health-monitor-point span {
-    display: inline-flex;
-    min-width: 0;
-    align-items: center;
-    gap: 7px;
-    overflow: hidden;
+.health-issue-copy strong {
+    color: var(--xui-text);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.health-issue-copy small {
     color: var(--xui-muted);
     font-size: 11px;
+    line-height: 1.45;
+}
+
+.health-issue-action {
+    flex: 0 0 auto;
+    color: var(--xui-primary);
+    font-size: 11px;
+    font-weight: 650;
     white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
-.health-monitor-point i {
-    width: 7px;
-    height: 7px;
-    flex: 0 0 7px;
-    border-radius: 50%;
-    background: #aeb9c9;
-    box-shadow: 0 0 0 3px rgba(126, 141, 161, .12);
-}
-
-.health-monitor-point strong {
-    overflow: hidden;
-    color: var(--xui-text);
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
-.health-monitor-point.success i {
-    background: var(--xui-success);
-    box-shadow: 0 0 0 3px rgba(25, 169, 116, .13);
-}
-
-.health-monitor-point.warning i {
-    background: var(--xui-warning);
-    box-shadow: 0 0 0 3px rgba(226, 154, 40, .14);
-}
-
-.health-monitor-point.info i {
-    background: var(--xui-primary);
-    box-shadow: 0 0 0 3px rgba(79, 124, 255, .13);
-}
-
-.health-monitor-point.danger i {
-    background: var(--xui-danger);
-    box-shadow: 0 0 0 3px rgba(228, 84, 84, .13);
 }
 
 .data-stale-alert {
@@ -1978,14 +1993,7 @@ body.login-page {
     }
 
     .health-issue-list {
-        max-width: 100%;
-        justify-content: flex-start;
-    }
-
-    .health-monitor-grid {
-        gap: 7px;
-        margin-top: 15px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
     }
 
     .monthly-traffic-card,

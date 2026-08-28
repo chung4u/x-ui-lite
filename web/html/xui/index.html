@@ -22,7 +22,13 @@
                     </transition>
 
                     <transition name="list" appear>
-                        <section class="health-banner" :class="healthState" aria-live="polite" aria-label="运行健康监控">
+                        <section class="health-banner" :class="[healthState, { 'health-banner-compact': healthIsHealthy }]"
+                                 aria-live="polite" aria-label="运行健康监控">
+                            <div class="health-healthy-state" v-if="healthIsHealthy">
+                                <i aria-hidden="true"></i>
+                                <strong>运行正常</strong>
+                            </div>
+                            <template v-else>
                             <div class="health-banner-top">
                                 <div class="health-banner-main">
                                     <div class="health-banner-icon">
@@ -30,45 +36,28 @@
                                                 :spin="healthState === 'neutral'"></a-icon>
                                     </div>
                                     <div>
-                                        <div class="health-banner-label">运行健康监控 · 5 个监测点</div>
                                         <h2>[[ healthTitle ]]</h2>
-                                        <p>[[ healthSummary ]]</p>
+                                        <p v-if="healthSummary">[[ healthSummary ]]</p>
                                     </div>
                                 </div>
-                                <div class="health-issue-list" v-if="healthIssues.length > 0">
-                                    <a-tag v-for="issue in healthIssues" :key="issue.key" :color="issue.color"
-                                           :class="{ 'health-issue-link': issue.href }"
-                                           :role="issue.href ? 'link' : null" :tabindex="issue.href ? 0 : null"
-                                           @click="openHealthIssue(issue)"
-                                           @keydown.enter.prevent="openHealthIssue(issue)"
-                                           @keydown.space.prevent="openHealthIssue(issue)">
-                                        [[ issue.label ]]
-                                    </a-tag>
+                                <a-button v-if="statusFetchFailed" icon="sync" @click="getStatus(true)">重新检查</a-button>
+                            </div>
+                            <div class="health-issue-list" v-if="!statusFetchFailed && healthIssues.length > 0">
+                                <div class="health-issue-item" v-for="issue in healthIssues" :key="issue.key"
+                                     :class="[issue.level, { actionable: issue.href }]"
+                                     :role="issue.href ? 'link' : null" :tabindex="issue.href ? 0 : null"
+                                     @click="openHealthIssue(issue)"
+                                     @keydown.enter.prevent="openHealthIssue(issue)"
+                                     @keydown.space.prevent="openHealthIssue(issue)">
+                                    <span class="health-issue-icon"><a-icon :type="issue.level === 'danger' ? 'exclamation-circle' : 'warning'"></a-icon></span>
+                                    <div class="health-issue-copy">
+                                        <strong>[[ issue.label ]]</strong>
+                                        <small>[[ issue.description ]]</small>
+                                    </div>
+                                    <span class="health-issue-action" v-if="issue.href">查看详情 <a-icon type="right"></a-icon></span>
                                 </div>
                             </div>
-                            <div class="health-monitor-grid" aria-label="监测点状态">
-                                <div class="health-monitor-point"
-                                     :class="!hasStatusLoaded ? 'neutral' : (status.xray.state === State.Running ? 'success' : 'danger')">
-                                    <span><i></i>Xray 核心</span>
-                                    <strong>[[ hasStatusLoaded ? status.xray.state : '检查中' ]]</strong>
-                                </div>
-                                <div class="health-monitor-point" :class="monitorMetricClass(status.cpu.percent)">
-                                    <span><i></i>处理器</span>
-                                    <strong>[[ status.cpu.percent ]]%</strong>
-                                </div>
-                                <div class="health-monitor-point" :class="monitorMetricClass(status.mem.percent)">
-                                    <span><i></i>运行内存</span>
-                                    <strong>[[ status.mem.percent ]]%</strong>
-                                </div>
-                                <div class="health-monitor-point" :class="monitorMetricClass(status.disk.percent)">
-                                    <span><i></i>磁盘空间</span>
-                                    <strong>[[ status.disk.percent ]]%</strong>
-                                </div>
-                                <div class="health-monitor-point" :class="inboundMonitorClass">
-                                    <span><i></i>入站服务</span>
-                                    <strong>[[ inboundMonitorLabel ]]</strong>
-                                </div>
-                            </div>
+                            </template>
                         </section>
                     </transition>
 
@@ -135,11 +124,11 @@
 
                     <transition name="list" appear>
                         <section class="monthly-traffic-card" :class="{ disabled: !status.monthlyTraffic.enabled }"
-                                 aria-label="服务器月度流量">
+                                 aria-label="流量监控">
                             <div class="monthly-traffic-heading">
                                 <div class="monthly-traffic-icon"><a-icon type="cloud-server"></a-icon></div>
                                 <div>
-                                    <div class="monthly-traffic-eyebrow">服务器月度流量</div>
+                                    <div class="monthly-traffic-eyebrow">流量监控</div>
                                     <h2 v-if="status.monthlyTraffic.enabled">剩余 [[ sizeFormat(status.monthlyTraffic.remaining) ]]</h2>
                                     <h2 v-else>尚未设置月度额度</h2>
                                     <p v-if="status.monthlyTraffic.enabled">
@@ -559,12 +548,6 @@
                     siderDrawer.navigate(basePath + issue.href);
                 }
             },
-            monitorMetricClass(value) {
-                const percent = Number(value || 0);
-                if (percent >= 90) return 'danger';
-                if (percent >= 80) return 'warning';
-                return this.hasStatusLoaded ? 'success' : 'neutral';
-            },
             compactSize(bytes) {
                 const value = Number(bytes || 0);
                 if (value >= 1024 * 1024 * 1024) return `${toFixed(value / (1024 * 1024 * 1024), 1)}G`;
@@ -641,50 +624,66 @@
         computed: {
             healthIssues() {
                 const issues = [];
-                if (this.statusFetchFailed) {
-                    issues.push({key: 'stale', label: '状态获取失败', color: 'red', level: 'danger'});
-                }
                 if (this.hasStatusLoaded && this.status.xray.state !== State.Running) {
-                    issues.push({key: 'xray', label: `Xray ${this.status.xray.state}`, color: 'red', level: 'danger'});
+                    issues.push({
+                        key: 'xray',
+                        label: this.status.xray.state === State.Error ? 'Xray 核心运行异常' : 'Xray 核心未运行',
+                        description: '代理服务当前可能无法正常使用',
+                        level: 'danger',
+                    });
                 }
                 for (const metric of this.hasStatusLoaded ? [
-                    {key: 'cpu', label: '处理器', value: this.status.cpu.percent},
-                    {key: 'mem', label: '运行内存', value: this.status.mem.percent},
-                    {key: 'swap', label: '交换空间', value: this.status.swap.percent},
+                    {key: 'cpu', label: '处理器负载', value: this.status.cpu.percent},
+                    {key: 'mem', label: '运行内存占用', value: this.status.mem.percent},
                     {key: 'disk', label: '磁盘空间', value: this.status.disk.percent},
                 ] : []) {
+                    const isDisk = metric.key === 'disk';
+                    const description = isDisk
+                        ? `当前仅剩 ${Math.max(0, 100 - Number(metric.value || 0))}% 可用空间`
+                        : `当前使用率 ${metric.value}%`;
                     if (metric.value >= 90) {
-                        issues.push({key: metric.key, label: `${metric.label} ${metric.value}%`, color: 'red', level: 'danger'});
+                        issues.push({
+                            key: metric.key,
+                            label: isDisk ? '磁盘剩余空间不足' : `${metric.label}过高`,
+                            description,
+                            level: 'danger',
+                        });
                     } else if (metric.value >= 80) {
-                        issues.push({key: metric.key, label: `${metric.label} ${metric.value}%`, color: 'orange', level: 'warning'});
+                        issues.push({
+                            key: metric.key,
+                            label: isDisk ? '磁盘剩余空间偏低' : `${metric.label}偏高`,
+                            description,
+                            level: 'warning',
+                        });
                     }
                 }
-                if (this.status.monthlyTraffic.enabled && this.status.monthlyTraffic.percent >= 100) {
-                    issues.push({key: 'vps-traffic', label: '服务器月度流量已用尽', color: 'red', level: 'danger', href: 'xui/setting?tab=traffic'});
-                } else if (this.status.monthlyTraffic.enabled && this.status.monthlyTraffic.percent >= 90) {
-                    issues.push({key: 'vps-traffic', label: `服务器月度流量已用 ${toFixed(this.status.monthlyTraffic.percent, 1)}%`, color: 'orange', level: 'warning', href: 'xui/setting?tab=traffic'});
-                }
                 if (this.inboundHealthError) {
-                    issues.push({key: 'inbound-unavailable', label: '入站摘要暂不可用', color: 'orange', level: 'warning'});
+                    issues.push({key: 'inbound-unavailable', label: '入站状态检查失败', description: '暂时无法获取入站配置状态', level: 'warning'});
                 }
                 if (this.inboundHealth.expired > 0) {
-                    issues.push({key: 'expired', label: `${this.inboundHealth.expired} 个入站已到期`, color: 'red', level: 'danger', href: 'xui/inbounds?quick=expired'});
+                    issues.push({key: 'expired', label: `${this.inboundHealth.expired} 个入站已到期`, description: '到期入站将无法继续提供服务', level: 'danger', href: 'xui/inbounds?quick=expired'});
                 }
                 if (this.inboundHealth.exhausted > 0) {
-                    issues.push({key: 'exhausted', label: `${this.inboundHealth.exhausted} 个入站流量耗尽`, color: 'red', level: 'danger', href: 'xui/inbounds?quick=exhausted'});
+                    issues.push({key: 'exhausted', label: `${this.inboundHealth.exhausted} 个入站流量已耗尽`, description: '流量耗尽的入站将无法继续使用', level: 'danger', href: 'xui/inbounds?quick=exhausted'});
                 }
                 if (this.inboundHealth.expiring > 0) {
-                    issues.push({key: 'expiring', label: `${this.inboundHealth.expiring} 个入站 7 天内到期`, color: 'orange', level: 'warning', href: 'xui/inbounds?quick=expiring'});
+                    issues.push({key: 'expiring', label: `${this.inboundHealth.expiring} 个入站将在 7 天内到期`, description: '请及时检查并更新有效期', level: 'warning', href: 'xui/inbounds?quick=expiring'});
                 }
                 if (this.inboundHealth.highUsage > 0) {
-                    issues.push({key: 'high-usage', label: `${this.inboundHealth.highUsage} 个入站流量超过 90%`, color: 'orange', level: 'warning', href: 'xui/inbounds?quick=high-usage'});
+                    issues.push({key: 'high-usage', label: `${this.inboundHealth.highUsage} 个入站流量使用超过 90%`, description: '请留意剩余流量，避免服务中断', level: 'warning', href: 'xui/inbounds?quick=high-usage'});
                 }
                 if (this.inboundHealth.disabled > 0) {
-                    issues.push({key: 'disabled', label: `${this.inboundHealth.disabled} 个入站已停用`, color: 'blue', level: 'info', href: 'xui/inbounds?quick=disabled'});
+                    issues.push({key: 'disabled', label: `${this.inboundHealth.disabled} 个入站已停用`, description: '停用的入站当前不会接收连接', level: 'warning', href: 'xui/inbounds?quick=disabled'});
                 }
                 return issues;
             },
+            healthIsHealthy() {
+                return this.hasStatusLoaded && !this.statusFetchFailed && this.healthIssues.length === 0;
+            },
             healthState() {
+                if (this.statusFetchFailed) {
+                    return 'danger';
+                }
                 if (!this.hasStatusLoaded && !this.statusFetchFailed) {
                     return 'neutral';
                 }
@@ -698,37 +697,21 @@
             },
             healthTitle() {
                 if (!this.hasStatusLoaded && !this.statusFetchFailed) {
-                    return '正在检查运行状态';
+                    return '正在检查运行状态…';
                 }
-                const count = this.healthIssues.filter(issue => issue.level !== 'info').length;
-                if (count === 0) {
-                    return '当前运行状态正常';
+                if (this.statusFetchFailed) {
+                    return '状态检查失败';
                 }
-                return `发现 ${count} 项需要关注`;
+                return this.healthIssues.length === 0 ? '运行正常' : `发现 ${this.healthIssues.length} 项问题`;
             },
             healthSummary() {
                 if (!this.hasStatusLoaded && !this.statusFetchFailed) {
-                    return '正在读取服务状态与入站摘要。';
+                    return '正在获取服务器运行数据';
                 }
                 if (this.statusFetchFailed) {
-                    return '暂时无法获取最新状态，请检查连接后重试。';
+                    return '暂时无法获取服务器运行数据';
                 }
-                if (this.healthState === 'success') {
-                    return '关键服务和资源指标均在正常范围内。';
-                }
-                return '请优先检查红色项目；点击提示可直接进入对应配置。';
-            },
-            inboundMonitorClass() {
-                if (!this.inboundHealthLoaded) return this.inboundHealthError ? 'warning' : 'neutral';
-                if (this.inboundHealth.expired > 0 || this.inboundHealth.exhausted > 0) return 'danger';
-                if (this.inboundHealth.expiring > 0 || this.inboundHealth.highUsage > 0) return 'warning';
-                if (this.inboundHealth.disabled > 0) return 'info';
-                return 'success';
-            },
-            inboundMonitorLabel() {
-                if (this.inboundHealthError) return '暂不可用';
-                if (!this.inboundHealthLoaded) return '检查中';
-                return `${this.inboundHealth.enabled}/${this.inboundHealth.total} 启用`;
+                return '';
             },
             monthlyTrafficColor() {
                 const percent = Number(this.status.monthlyTraffic.percent || 0);
