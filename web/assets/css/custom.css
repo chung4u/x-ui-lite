@@ -1568,6 +1568,14 @@ textarea {
     line-height: 1.6;
 }
 
+.setting-list .ant-input-number {
+    width: 100%;
+}
+
+.setting-list .ant-input-number-input {
+    height: 38px;
+}
+
 @media (max-width: 1199px) {
     .setting-list .ant-list-item-meta {
         margin-bottom: 14px;

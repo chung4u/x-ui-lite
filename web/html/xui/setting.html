@@ -57,7 +57,7 @@
                                 <a-tab-pane key="1" tab="面板配置">
                                     <a-list class="setting-list" item-layout="horizontal">
                                         <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，保存并重启面板后生效" v-model="allSetting.webListen" @changed="touchSettings"></setting-list-item>
-                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口，保存并重启面板后生效" v-model.number="allSetting.webPort" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口，保存并重启面板后生效" v-model="allSetting.webPort" :min="1" :max="65535" @changed="touchSettings"></setting-list-item>
                                         <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webCertFile" @changed="touchSettings"></setting-list-item>
                                         <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webKeyFile" @changed="touchSettings"></setting-list-item>
                                         <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾，保存并重启面板后生效" v-model="allSetting.webBasePath" @changed="touchSettings"></setting-list-item>
@@ -92,8 +92,8 @@
                                              message="月度流量从启用设置后开始计量"
                                              description="统计服务器默认出口网卡的上传与下载总量，到达每月重置日后自动开始新的周期。"></a-alert>
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="number" title="月度总额度 (GB)" desc="0 表示关闭月度流量显示；保存后约 10 秒生效，无需重启面板" v-model.number="allSetting.trafficLimitGB" @changed="touchSettings"></setting-list-item>
-                                        <setting-list-item type="number" title="每月重置日" desc="可设置 1–31 日；月份天数不足时按该月最后一天 00:00 自动清零" v-model.number="allSetting.trafficResetDay" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="number" title="月度总额度 (GB)" desc="0 表示关闭月度流量显示；保存后约 10 秒生效，无需重启面板" v-model="allSetting.trafficLimitGB" :min="0" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="number" title="每月重置日" desc="可设置 1–31 日；月份天数不足时按该月最后一天 00:00 自动清零" v-model="allSetting.trafficResetDay" :min="1" :max="31" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
                                 <a-tab-pane key="5" tab="其他设置">
@@ -170,16 +170,39 @@
             touchSettings() {
                 this.settingsRevision += 1;
             },
+            normalizeAllSetting(source) {
+                const normalized = new AllSetting(source);
+                normalized.webPort = Number(source.webPort);
+                normalized.trafficLimitGB = Number(source.trafficLimitGB);
+                normalized.trafficResetDay = Number(source.trafficResetDay);
+                return normalized;
+            },
+            hasCompleteSettingData(data) {
+                if (!data) return false;
+                const port = Number(data.webPort);
+                const limit = Number(data.trafficLimitGB);
+                const resetDay = Number(data.trafficResetDay);
+                return Number.isInteger(port) && port >= 1 && port <= 65535
+                    && Number.isInteger(limit) && limit >= 0
+                    && Number.isInteger(resetDay) && resetDay >= 1 && resetDay <= 31;
+            },
+            applyAllSetting(data) {
+                const normalized = this.normalizeAllSetting(data);
+                this.oldAllSetting = new AllSetting(normalized);
+                this.allSetting = new AllSetting(normalized);
+                this.touchSettings();
+            },
             async getAllSetting(showLoading = true) {
                 if (showLoading) this.loading(true);
                 const msg = await HttpUtil.post("/xui/setting/all");
                 if (showLoading) this.loading(false);
-                if (msg.success) {
-                    this.oldAllSetting = new AllSetting(msg.obj);
-                    this.allSetting = new AllSetting(msg.obj);
+                if (msg.success && this.hasCompleteSettingData(msg.obj)) {
+                    this.applyAllSetting(msg.obj);
                     this.settingsLoadError = false;
+                    return true;
                 } else {
                     this.settingsLoadError = true;
+                    return false;
                 }
             },
             validateSettings() {
@@ -240,11 +263,17 @@
                         return;
                     }
                 }
+                const submittedSetting = this.normalizeAllSetting(this.allSetting);
                 this.savingSettings = true;
-                const msg = await HttpUtil.post("/xui/setting/update", this.allSetting);
+                const msg = await HttpUtil.post("/xui/setting/update", submittedSetting);
                 this.savingSettings = false;
                 if (msg.success) {
-                    await this.getAllSetting(false);
+                    this.applyAllSetting(submittedSetting);
+                    const readBackSucceeded = await this.getAllSetting(false);
+                    if (!readBackSucceeded) {
+                        this.applyAllSetting(submittedSetting);
+                        this.$message.warning('设置已保存，暂时无法重新读取服务器配置');
+                    }
                 }
             },
             async discardChanges() {

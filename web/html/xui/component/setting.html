@@ -9,8 +9,8 @@
                 <a-input :value="value" :aria-label="title" @input="emitInput"></a-input>
             </template>
             <template v-else-if="type === 'number'">
-                <a-input type="number" :value="value" :aria-label="title"
-                         @input="emitInput"></a-input>
+                <a-input-number :value="numberValue" :aria-label="title" :min="min" :max="max"
+                                :precision="0" @change="emitNumber"></a-input-number>
             </template>
             <template v-else-if="type === 'textarea'">
                 <a-textarea :value="value" :aria-label="title" @input="emitInput" :auto-size="{ minRows: 10, maxRows: 10 }"></a-textarea>
@@ -23,13 +23,25 @@
 {{define "component/setting"}}
 <script>
     Vue.component('setting-list-item', {
-        props: ["type", "title", "desc", "value"],
+        props: ["type", "title", "desc", "value", "min", "max"],
         template: `{{template "component/settingListItem"}}`,
+        computed: {
+            numberValue() {
+                if (this.value === '' || this.value === null || this.value === undefined) {
+                    return undefined;
+                }
+                const value = Number(this.value);
+                return Number.isFinite(value) ? value : undefined;
+            },
+        },
         methods: {
             emitInput(payload) {
                 const rawValue = payload && payload.target ? payload.target.value : payload;
-                const value = this.type === 'number' && rawValue !== '' ? Number(rawValue) : rawValue;
-                this.$emit('input', value);
+                this.$emit('input', rawValue);
+                this.$emit('changed');
+            },
+            emitNumber(value) {
+                this.$emit('input', value === null || value === undefined ? '' : Number(value));
                 this.$emit('changed');
             },
         },
