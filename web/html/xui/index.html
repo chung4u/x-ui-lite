@@ -9,55 +9,65 @@
             <a-spin :spinning="spinning" :delay="200" :tip="loadingTip">
                 <div class="page-shell">
                     <transition name="list" appear>
-                        <header class="page-header">
+                        <header class="page-header system-status-header">
                             <div>
                                 <div class="page-eyebrow">Overview</div>
                                 <h1 class="page-title">系统状态</h1>
-                                <p class="page-subtitle">实时查看服务器资源、网络流量与 Xray 核心运行状态。</p>
                             </div>
                             <div class="page-actions">
-                                <div class="status-pill" v-if="status.xray.state === State.Running">
-                                    <span class="status-dot"></span>
-                                    服务运行正常
-                                </div>
-                                <a-tag v-else :color="status.xray.color">Xray [[ status.xray.state ]]</a-tag>
-                                <div class="refresh-control">
-                                    <span class="refresh-copy">
-                                        <span>数据更新</span>
-                                        <strong>[[ lastUpdatedLabel ]]</strong>
-                                    </span>
-                                    <a-button class="icon-button" icon="sync" :loading="refreshing"
-                                              aria-label="立即刷新系统状态" @click="getStatus(true)"></a-button>
-                                </div>
+                                <a-button class="icon-button" icon="sync" :loading="refreshing"
+                                          aria-label="立即刷新系统状态" @click="getStatus(true)"></a-button>
                             </div>
                         </header>
                     </transition>
 
                     <transition name="list" appear>
-                        <section class="health-banner" :class="healthState" aria-live="polite" aria-label="运行健康概览">
-                            <div class="health-banner-main">
-                                <div class="health-banner-icon">
-                                    <a-icon :type="healthState === 'success' ? 'check-circle' : (healthState === 'neutral' ? 'sync' : 'warning')"
-                                            :spin="healthState === 'neutral'"></a-icon>
+                        <section class="health-banner" :class="healthState" aria-live="polite" aria-label="运行健康监控">
+                            <div class="health-banner-top">
+                                <div class="health-banner-main">
+                                    <div class="health-banner-icon">
+                                        <a-icon :type="healthState === 'success' ? 'check-circle' : (healthState === 'neutral' ? 'sync' : 'warning')"
+                                                :spin="healthState === 'neutral'"></a-icon>
+                                    </div>
+                                    <div>
+                                        <div class="health-banner-label">运行健康监控 · 5 个监测点</div>
+                                        <h2>[[ healthTitle ]]</h2>
+                                        <p>[[ healthSummary ]]</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <div class="health-banner-label">运行健康</div>
-                                    <h2>[[ healthTitle ]]</h2>
-                                    <p>[[ healthSummary ]]</p>
+                                <div class="health-issue-list" v-if="healthIssues.length > 0">
+                                    <a-tag v-for="issue in healthIssues" :key="issue.key" :color="issue.color"
+                                           :class="{ 'health-issue-link': issue.href }"
+                                           :role="issue.href ? 'link' : null" :tabindex="issue.href ? 0 : null"
+                                           @click="openHealthIssue(issue)"
+                                           @keydown.enter.prevent="openHealthIssue(issue)"
+                                           @keydown.space.prevent="openHealthIssue(issue)">
+                                        [[ issue.label ]]
+                                    </a-tag>
                                 </div>
                             </div>
-                            <div class="health-issue-list" v-if="healthIssues.length > 0">
-                                <a-tag v-for="issue in healthIssues" :key="issue.key" :color="issue.color"
-                                       :class="{ 'health-issue-link': issue.href }"
-                                       :role="issue.href ? 'link' : null" :tabindex="issue.href ? 0 : null"
-                                       @click="openHealthIssue(issue)"
-                                       @keydown.enter.prevent="openHealthIssue(issue)"
-                                       @keydown.space.prevent="openHealthIssue(issue)">
-                                    [[ issue.label ]]
-                                </a-tag>
-                            </div>
-                            <div class="health-issue-list" v-else>
-                                <a-tag color="green">关键指标正常</a-tag>
+                            <div class="health-monitor-grid" aria-label="监测点状态">
+                                <div class="health-monitor-point"
+                                     :class="!hasStatusLoaded ? 'neutral' : (status.xray.state === State.Running ? 'success' : 'danger')">
+                                    <span><i></i>Xray 核心</span>
+                                    <strong>[[ hasStatusLoaded ? status.xray.state : '检查中' ]]</strong>
+                                </div>
+                                <div class="health-monitor-point" :class="monitorMetricClass(status.cpu.percent)">
+                                    <span><i></i>处理器</span>
+                                    <strong>[[ status.cpu.percent ]]%</strong>
+                                </div>
+                                <div class="health-monitor-point" :class="monitorMetricClass(status.mem.percent)">
+                                    <span><i></i>运行内存</span>
+                                    <strong>[[ status.mem.percent ]]%</strong>
+                                </div>
+                                <div class="health-monitor-point" :class="monitorMetricClass(status.disk.percent)">
+                                    <span><i></i>磁盘空间</span>
+                                    <strong>[[ status.disk.percent ]]%</strong>
+                                </div>
+                                <div class="health-monitor-point" :class="inboundMonitorClass">
+                                    <span><i></i>入站服务</span>
+                                    <strong>[[ inboundMonitorLabel ]]</strong>
+                                </div>
                             </div>
                         </section>
                     </transition>
@@ -96,7 +106,7 @@
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="resource-card" hoverable>
+                                    <a-card class="resource-card no-sparkline" hoverable>
                                         <div class="resource-card-head">
                                             <div class="resource-icon violet"><a-icon type="hdd"></a-icon></div>
                                             <div class="resource-value">[[ status.swap.percent ]]%</div>
@@ -104,14 +114,11 @@
                                         <div class="resource-label">交换空间</div>
                                         <a-progress :show-info="false" :stroke-width="7"
                                                     :stroke-color="status.swap.color" :percent="status.swap.percent"></a-progress>
-                                        <svg class="resource-sparkline violet" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
-                                            <polyline :points="sparklinePoints('swap')"></polyline>
-                                        </svg>
                                         <div class="resource-detail">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="resource-card" hoverable>
+                                    <a-card class="resource-card no-sparkline" hoverable>
                                         <div class="resource-card-head">
                                             <div class="resource-icon warning"><a-icon type="pie-chart"></a-icon></div>
                                             <div class="resource-value">[[ status.disk.percent ]]%</div>
@@ -119,9 +126,6 @@
                                         <div class="resource-label">磁盘空间</div>
                                         <a-progress :show-info="false" :stroke-width="7"
                                                     :stroke-color="status.disk.color" :percent="status.disk.percent"></a-progress>
-                                        <svg class="resource-sparkline warning" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
-                                            <polyline :points="sparklinePoints('disk')"></polyline>
-                                        </svg>
                                         <div class="resource-detail">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
                                     </a-card>
                                 </a-col>
@@ -131,23 +135,22 @@
 
                     <transition name="list" appear>
                         <section class="monthly-traffic-card" :class="{ disabled: !status.monthlyTraffic.enabled }"
-                                 aria-label="VPS 月度流量">
+                                 aria-label="服务器月度流量">
                             <div class="monthly-traffic-heading">
                                 <div class="monthly-traffic-icon"><a-icon type="cloud-server"></a-icon></div>
                                 <div>
-                                    <div class="monthly-traffic-eyebrow">VPS 月度流量</div>
+                                    <div class="monthly-traffic-eyebrow">服务器月度流量</div>
                                     <h2 v-if="status.monthlyTraffic.enabled">剩余 [[ sizeFormat(status.monthlyTraffic.remaining) ]]</h2>
                                     <h2 v-else>尚未设置月度额度</h2>
                                     <p v-if="status.monthlyTraffic.enabled">
                                         本周期已用 [[ sizeFormat(status.monthlyTraffic.used) ]] / [[ sizeFormat(status.monthlyTraffic.limit) ]]
                                     </p>
-                                    <p v-else>设置 VPS 每月总流量后，系统将持续显示已用与剩余额度。</p>
+                                    <p v-else>设置服务器每月总流量后，系统将持续显示已用与剩余额度。</p>
                                 </div>
                             </div>
                             <div class="monthly-traffic-meter" v-if="status.monthlyTraffic.enabled">
                                 <div class="monthly-traffic-progress-head">
                                     <span>已用 [[ toFixed(status.monthlyTraffic.percent, 1) ]]%</span>
-                                    <span>[[ monthlyTrafficResetLabel ]]</span>
                                 </div>
                                 <a-progress :show-info="false" :stroke-width="9" :percent="status.monthlyTraffic.percent"
                                             :stroke-color="monthlyTrafficColor"></a-progress>
@@ -213,7 +216,8 @@
                                             </div>
                                             <div class="overview-meta">
                                                 [[ status.xray.version || '正在获取版本' ]]
-                                                <a @click="openSelectV2rayVersion"> · 切换版本</a>
+                                                <button type="button" class="inline-link-button"
+                                                        @click="openSelectV2rayVersion">· 切换版本</button>
                                             </div>
                                         </div>
                                     </a-card>
@@ -282,15 +286,42 @@
         </a-layout-content>
     </a-layout>
     <a-modal id="version-modal" v-model="versionModal.visible" title="切换 Xray 版本"
-             :closable="true" @ok="() => versionModal.visible = false"
-             ok-text="完成" cancel-text="取消">
-        <p style="color: #49566d; margin-bottom: 6px">请选择需要安装的 Xray 版本。</p>
-        <p style="color: #e29a28; margin-bottom: 18px"><a-icon type="warning"></a-icon> 旧版本可能与现有配置不兼容，请谨慎操作。</p>
-        <template v-for="version, index in versionModal.versions">
-            <a-tag :color="index % 2 == 0 ? 'blue' : 'green'"
-                   style="margin: 6px; cursor: pointer" @click="switchV2rayVersion(version)">
-                [[ version ]]
-            </a-tag>
+             :closable="true" :width="620" :mask-closable="versionModal.installingVersion === ''">
+        <div class="version-switch-summary">
+            <div class="version-switch-icon"><a-icon type="branches"></a-icon></div>
+            <div>
+                <span>当前运行版本</span>
+                <strong>[[ status.xray.version || '暂未识别' ]]</strong>
+            </div>
+        </div>
+        <a-alert class="version-switch-alert" type="warning" show-icon
+                 message="切换前请确认版本兼容性"
+                 description="安装会替换 Xray 核心并短暂重启代理服务，请避开业务高峰操作。"></a-alert>
+        <div class="version-switch-heading">
+            <div>
+                <h3>可安装版本</h3>
+                <p>选择目标版本后仍需二次确认。</p>
+            </div>
+            <span>共 [[ versionModal.versions.length ]] 个版本</span>
+        </div>
+        <div class="version-switch-list" role="list" aria-label="可安装的 Xray 版本">
+            <div class="version-switch-option" role="listitem"
+                 v-for="(version, index) in versionModal.versions" :key="version">
+                <div class="version-switch-copy">
+                    <strong>[[ version ]]</strong>
+                    <small>[[ index === 0 ? '最新可用版本' : '历史可用版本' ]]</small>
+                </div>
+                <a-tag v-if="index === 0" color="blue">最新</a-tag>
+                <a-button :type="index === 0 ? 'primary' : 'default'" size="small"
+                          :loading="versionModal.installingVersion === version"
+                          :disabled="versionModal.installingVersion !== ''"
+                          @click="switchV2rayVersion(version)">
+                    [[ versionModal.installingVersion === version ? '安装中' : '选择安装' ]]
+                </a-button>
+            </div>
+        </div>
+        <template slot="footer">
+            <a-button :disabled="versionModal.installingVersion !== ''" @click="versionModal.hide()">关闭</a-button>
         </template>
     </a-modal>
 </a-layout>
@@ -395,12 +426,15 @@
     const versionModal = {
         visible: false,
         versions: [],
+        installingVersion: '',
         show(versions) {
             this.visible = true;
             this.versions = versions;
+            this.installingVersion = '';
         },
         hide() {
             this.visible = false;
+            this.installingVersion = '';
         },
     };
 
@@ -415,7 +449,6 @@
             loadingTip: '加载中',
             refreshing: false,
             statusRequestInFlight: false,
-            lastUpdatedAt: null,
             hasStatusLoaded: false,
             statusFetchFailed: false,
             statusHistory: [],
@@ -427,6 +460,8 @@
                 expiring: 0,
                 exhausted: 0,
                 highUsage: 0,
+                total: 0,
+                enabled: 0,
             },
             pollTimer: null,
             pollCycle: 0,
@@ -448,7 +483,6 @@
                     const msg = await HttpUtil.post('/server/status');
                     if (msg.success) {
                         this.setStatus(msg.obj);
-                        this.lastUpdatedAt = new Date();
                         this.hasStatusLoaded = true;
                         this.statusFetchFailed = false;
                     } else {
@@ -493,12 +527,21 @@
                 }
                 const now = Date.now();
                 const sevenDays = 7 * 24 * 60 * 60 * 1000;
-                const summary = {disabled: 0, expired: 0, expiring: 0, exhausted: 0, highUsage: 0};
+                const summary = {
+                    disabled: 0,
+                    expired: 0,
+                    expiring: 0,
+                    exhausted: 0,
+                    highUsage: 0,
+                    total: msg.obj.length,
+                    enabled: 0,
+                };
                 for (const inbound of msg.obj) {
                     const used = Number(inbound.up || 0) + Number(inbound.down || 0);
                     const total = Number(inbound.total || 0);
                     const expiry = Number(inbound.expiryTime || 0);
                     if (!inbound.enable) summary.disabled++;
+                    if (inbound.enable) summary.enabled++;
                     if (expiry > 0 && expiry <= now) summary.expired++;
                     if (expiry > now && expiry <= now + sevenDays) summary.expiring++;
                     if (total > 0 && used >= total) {
@@ -515,6 +558,12 @@
                 if (issue.href) {
                     siderDrawer.navigate(basePath + issue.href);
                 }
+            },
+            monitorMetricClass(value) {
+                const percent = Number(value || 0);
+                if (percent >= 90) return 'danger';
+                if (percent >= 80) return 'warning';
+                return this.hasStatusLoaded ? 'success' : 'neutral';
             },
             compactSize(bytes) {
                 const value = Number(bytes || 0);
@@ -568,30 +617,32 @@
             },
             switchV2rayVersion(version) {
                 this.$confirm({
-                    title: '切换 xray 版本',
-                    content: '是否切换 xray 版本至' + ` ${version}?`,
-                    okText: '确定',
-                    cancelText: '取消',
+                    title: `安装 Xray ${version}？`,
+                    content: '安装过程中代理服务会短暂重启。请确认该版本与当前配置兼容，并避开业务高峰。',
+                    okText: '确认安装',
+                    okType: 'danger',
+                    cancelText: '返回检查',
                     onOk: async () => {
-                        versionModal.hide();
-                        this.loading(true, '安装中，请不要刷新此页面');
-                        await HttpUtil.post(`/server/installXray/${version}`);
-                        this.loading(false);
+                        versionModal.installingVersion = version;
+                        try {
+                            const msg = await HttpUtil.post(`/server/installXray/${version}`);
+                            if (msg.success) {
+                                versionModal.hide();
+                                await PromiseUtil.sleep(1000);
+                                await this.getStatus(true);
+                            }
+                        } finally {
+                            versionModal.installingVersion = '';
+                        }
                     },
                 });
             },
         },
         computed: {
-            lastUpdatedLabel() {
-                if (this.lastUpdatedAt == null) {
-                    return '等待首次更新';
-                }
-                return moment(this.lastUpdatedAt).format('HH:mm:ss');
-            },
             healthIssues() {
                 const issues = [];
                 if (this.statusFetchFailed) {
-                    issues.push({key: 'stale', label: '状态数据更新失败', color: 'red', level: 'danger'});
+                    issues.push({key: 'stale', label: '状态获取失败', color: 'red', level: 'danger'});
                 }
                 if (this.hasStatusLoaded && this.status.xray.state !== State.Running) {
                     issues.push({key: 'xray', label: `Xray ${this.status.xray.state}`, color: 'red', level: 'danger'});
@@ -609,9 +660,9 @@
                     }
                 }
                 if (this.status.monthlyTraffic.enabled && this.status.monthlyTraffic.percent >= 100) {
-                    issues.push({key: 'vps-traffic', label: 'VPS 月度流量已用尽', color: 'red', level: 'danger', href: 'xui/setting?tab=traffic'});
+                    issues.push({key: 'vps-traffic', label: '服务器月度流量已用尽', color: 'red', level: 'danger', href: 'xui/setting?tab=traffic'});
                 } else if (this.status.monthlyTraffic.enabled && this.status.monthlyTraffic.percent >= 90) {
-                    issues.push({key: 'vps-traffic', label: `VPS 月度流量已用 ${toFixed(this.status.monthlyTraffic.percent, 1)}%`, color: 'orange', level: 'warning', href: 'xui/setting?tab=traffic'});
+                    issues.push({key: 'vps-traffic', label: `服务器月度流量已用 ${toFixed(this.status.monthlyTraffic.percent, 1)}%`, color: 'orange', level: 'warning', href: 'xui/setting?tab=traffic'});
                 }
                 if (this.inboundHealthError) {
                     issues.push({key: 'inbound-unavailable', label: '入站摘要暂不可用', color: 'orange', level: 'warning'});
@@ -660,25 +711,30 @@
                     return '正在读取服务状态与入站摘要。';
                 }
                 if (this.statusFetchFailed) {
-                    return this.lastUpdatedAt == null
-                        ? '尚未获取到有效状态，请检查连接后重试。'
-                        : `当前显示 ${moment(this.lastUpdatedAt).format('HH:mm:ss')} 的最后成功数据。`;
+                    return '暂时无法获取最新状态，请检查连接后重试。';
                 }
                 if (this.healthState === 'success') {
                     return '关键服务和资源指标均在正常范围内。';
                 }
                 return '请优先检查红色项目；点击提示可直接进入对应配置。';
             },
+            inboundMonitorClass() {
+                if (!this.inboundHealthLoaded) return this.inboundHealthError ? 'warning' : 'neutral';
+                if (this.inboundHealth.expired > 0 || this.inboundHealth.exhausted > 0) return 'danger';
+                if (this.inboundHealth.expiring > 0 || this.inboundHealth.highUsage > 0) return 'warning';
+                if (this.inboundHealth.disabled > 0) return 'info';
+                return 'success';
+            },
+            inboundMonitorLabel() {
+                if (this.inboundHealthError) return '暂不可用';
+                if (!this.inboundHealthLoaded) return '检查中';
+                return `${this.inboundHealth.enabled}/${this.inboundHealth.total} 启用`;
+            },
             monthlyTrafficColor() {
                 const percent = Number(this.status.monthlyTraffic.percent || 0);
                 if (percent >= 100) return '#e45454';
                 if (percent >= 90) return '#e29a28';
                 return '#4f7cff';
-            },
-            monthlyTrafficResetLabel() {
-                const nextReset = this.status.monthlyTraffic.nextReset;
-                if (!nextReset) return '等待重置时间';
-                return `${moment(nextReset).format('YYYY-MM-DD HH:mm')} 清零`;
             },
             trafficHistoryMax() {
                 return Math.max(0, ...this.status.monthlyTraffic.daily.map(day => Number(day.used || 0)));

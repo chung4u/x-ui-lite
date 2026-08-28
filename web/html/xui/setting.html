@@ -13,7 +13,6 @@
                             <div>
                                 <div class="page-eyebrow">Panel settings</div>
                                 <h1 class="page-title">面板设置</h1>
-                                <p class="page-subtitle">管理访问方式、管理员账号与 Xray 模板。带有“重启生效”的项目保存后需要重启面板。</p>
                             </div>
                             <div class="page-actions">
                                 <div class="settings-save-state" :class="saveBtnDisable ? 'saved' : 'pending'">
@@ -88,7 +87,7 @@
                                         <setting-list-item type="textarea" title="Xray 配置模板" desc="系统会基于此模板生成最终配置，保存并重启面板后生效" v-model="allSetting.xrayTemplateConfig"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
-                                <a-tab-pane key="4" tab="VPS 流量">
+                                <a-tab-pane key="4" tab="服务器流量">
                                     <a-alert class="settings-inline-alert" type="info" show-icon
                                              message="月度流量从启用设置后开始计量"
                                              description="统计服务器默认出口网卡的上传与下载总量，到达每月重置日后自动开始新的周期。"></a-alert>
@@ -156,7 +155,6 @@
             spinning: false,
             oldAllSetting: new AllSetting(),
             allSetting: new AllSetting(),
-            saveBtnDisable: true,
             user: {},
             updatingUser: false,
             savingSettings: false,
@@ -175,7 +173,6 @@
                 if (msg.success) {
                     this.oldAllSetting = new AllSetting(msg.obj);
                     this.allSetting = new AllSetting(msg.obj);
-                    this.saveBtnDisable = true;
                     this.settingsLoadError = false;
                 } else {
                     this.settingsLoadError = true;
@@ -307,6 +304,9 @@
             }
         },
         computed: {
+            saveBtnDisable() {
+                return this.oldAllSetting.equals(this.allSetting);
+            },
             changedSettingLabels() {
                 const labels = {
                     webListen: '监听 IP',
@@ -344,12 +344,6 @@
             },
         },
         watch: {
-            allSetting: {
-                deep: true,
-                handler() {
-                    this.saveBtnDisable = this.oldAllSetting.equals(this.allSetting);
-                },
-            },
             activeTab() {
                 this.syncActiveTabToUrl();
             },

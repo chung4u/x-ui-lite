@@ -13,17 +13,10 @@
                             <div>
                                 <div class="page-eyebrow">Inbound management</div>
                                 <h1 class="page-title">入站列表</h1>
-                                <p class="page-subtitle">集中查看端口、协议、传输方式与流量使用情况，管理所有 Xray 入站配置。</p>
                             </div>
                             <div class="page-actions">
-                                <div class="refresh-control">
-                                    <span class="refresh-copy">
-                                        <span>配置更新</span>
-                                        <strong>[[ lastUpdatedLabel ]]</strong>
-                                    </span>
-                                    <a-button class="icon-button" icon="reload" :loading="refreshing"
-                                              aria-label="刷新入站配置" @click="getDBInbounds"></a-button>
-                                </div>
+                                <a-button class="icon-button" icon="reload" :loading="refreshing"
+                                          aria-label="刷新入站配置" @click="getDBInbounds"></a-button>
                                 <a-button type="primary" icon="plus" @click="openAddInbound">添加入站</a-button>
                             </div>
                         </header>
@@ -31,8 +24,8 @@
 
                     <transition name="list" appear>
                         <a-alert v-if="loadError" class="data-stale-alert" type="warning" show-icon
-                                 message="入站数据更新失败"
-                                 :description="lastUpdatedAt ? `当前显示 ${lastUpdatedLabel} 的最后成功数据，请检查连接后重试。` : '尚未获取到入站配置，请检查连接后重试。'"></a-alert>
+                                 message="入站配置获取失败"
+                                 description="暂时无法获取入站配置，请检查连接后重试。"></a-alert>
                     </transition>
 
                     <transition name="list" appear>
@@ -343,7 +336,6 @@
             spinning: false,
             refreshing: false,
             hasLoaded: false,
-            lastUpdatedAt: null,
             dbInbounds: [],
             inboundById: {},
             filters: {
@@ -375,7 +367,6 @@
                         return;
                     }
                     this.setInbounds(msg.obj);
-                    this.lastUpdatedAt = new Date();
                     this.hasLoaded = true;
                     this.loadError = false;
                 } finally {
@@ -699,12 +690,6 @@
             document.removeEventListener('keydown', this.handleKeyboardShortcut);
         },
         computed: {
-            lastUpdatedLabel() {
-                if (this.lastUpdatedAt == null) {
-                    return '等待首次更新';
-                }
-                return moment(this.lastUpdatedAt).format('HH:mm:ss');
-            },
             enabledCount() {
                 return this.dbInbounds.filter(inbound => inbound.enable).length;
             },
