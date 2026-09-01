@@ -1,56 +1,38 @@
-# X-UI
-简体中文|[ENGLISH](./README_EN.md)  
+# X-UI · RoyLive 私有维护版
 
-> 声明：该项目仅供个人学习、交流，请遵守当地法律法规,勿用于非法用途;请勿用于生产环境  
-> 声明：该项目已闭源，介意者请勿使用；如您需要开源代码，请附上您的Github Profile邮箱联系  
+> 此仓库为私有维护版本，暂不对外发布。它基于 [FranzKafkaYu/x-ui](https://github.com/FranzKafkaYu/x-ui) 演进，保留原项目的 GPL-3.0 许可证和署名。
 
-支持单端口多用户、多协议的 xray 面板，究极缝合怪    
-通过免费的Telegram bot方便快捷地进行监控、管理你的代理服务  
-&#x26A1;`xtls-rprx-vision`与`reality`快速入手请看[这里](https://github.com/FranzKafkaYu/x-ui/wiki/%E8%8A%82%E7%82%B9%E9%85%8D%E7%BD%AE)  
-欢迎大家使用并反馈意见或提交Pr,帮助项目更好的改善  
-如果您觉得本项目对您有所帮助,不妨给个star:star2:支持我  
-或者你恰巧有购买服务器的需求,可以通过文末的赞助部分支持我~ 
+面向日常服务器运维的 Xray 控制面板：优先呈现运行健康、流量和入站状态，并将高频管理操作收敛为更清晰的工作流。
 
-# 文档目录  
-- [功能介绍](#功能介绍)  
-- [一键安装](#一键安装)  
-- [效果预览](#效果预览)  
-- [快捷方式](#快捷方式)  
-- [变更记录](#变更记录)
+## 本版关键能力
 
-# 功能介绍
+- 简洁的运行健康监控：正常时只显示“运行正常”，异常时才展开具体监测项。
+- 服务器流量监控：月度额度、每月 1–31 日重置、近 14 天趋势和月底用量预测。
+- 资源状态重新排序：实时网速与网络连接置于前列，并提供最近 60 秒实时曲线。
+- VLESS 专注的入站管理：按月自动重置入站流量，隐藏非必要传输信息，日期仅显示到天。
+- 用户与配置分发：可为入站新增独立用户，直接下载 Clash Verge 配置；管理菜单可生成二维码或复制配置。
+- 面板设置增强：流量配置可靠保存、可选择时区、显示证书关键信息并生成自签名证书。
 
-- 系统状态监控
-- 支持单端口多用户、多协议，网页可视化操作
-- 支持的协议：vmess、vless、trojan、shadowsocks、shadowsocks 2022、dokodemo-door、socks、http
-- 支持配置更多传输配置：http、tcp、ws、grpc、kcp、quic
-- 流量统计，限制流量，限制到期时间，一键重置与设备监控
-- 可自定义 xray 配置模板
-- 支持 https 访问面板（自备域名 + ssl 证书）
-- 支持一键SSL证书申请且自动续签
-- Telegram bot通知、控制功能
-- 更多高级配置项，详见面板 
+## 界面预览
 
-:bulb:具体**使用、配置细节以及问题排查**请点击这里:point_right:[WIKI](https://github.com/FranzKafkaYu/x-ui/wiki):point_left:  
- Specific **Usages、Configurations and Debug** please refer to [WIKI](https://github.com/FranzKafkaYu/x-ui/wiki)    
-# 一键安装
-在安装前请确保你的系统支持`bash`环境,且系统网络正常  
+| 系统状态 | 入站管理 | 面板设置 |
+| --- | --- | --- |
+| ![系统状态](docs/screenshots/system-status.png) | ![入站管理](docs/screenshots/inbounds.png) | ![面板设置](docs/screenshots/panel-settings.png) |
 
-&#x26A1;从原版升级也可使用该命令，数据不会丢失&#x26A1;
+截图来自隔离预览环境，未使用线上访问地址或管理凭据。
 
-```
-bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh)
-```    
-For English Users,please use the following command to install English supported version:  
-```
-bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install_en.sh)
-```
-如需安装指定的版本,可以在上述命令中指定版本号,如指定版本为`0.3.4.4`,安装命令如下：    
-```
-bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh) 0.3.4.4   
-```
+## 使用与维护说明
 
-# 效果预览  
+- 本私有版本的网页管理界面仅支持 VLESS；已有非 VLESS 入站不会在此管理流程中创建或编辑。
+- 为避免影响既有节点，Reality 等现有传输配置在用户管理流程中保持原样；无需要时不建议修改。
+- 上游仓库的“一键安装/更新”脚本会拉取上游版本，**不适用于部署或更新本私有维护版**。本版本请从本仓库构建并按内部发布流程部署。
+- 完整变更见 [CHANGELOG.md](./CHANGELOG.md)。
+
+## 上游项目历史说明
+
+以下内容为上游项目保留的历史文档和功能记录，其中的多协议说明、安装脚本与效果图不代表本私有维护版的当前能力。
+
+# 历史效果预览
 `面板使用`:  
 <details>
 <summary><b>点击查看效果预览</b></summary>  
