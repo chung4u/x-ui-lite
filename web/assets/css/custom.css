@@ -447,6 +447,30 @@ textarea {
     letter-spacing: -.03em;
 }
 
+.resource-value-dual {
+    display: flex;
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13px;
+    letter-spacing: 0;
+}
+
+.resource-value-dual span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.resource-value-dual span:first-child {
+    color: #5f7fe8;
+}
+
+.resource-value-dual span:last-child {
+    color: #28a87d;
+}
+
 .resource-label {
     margin: 15px 0 8px;
     color: var(--xui-ink);
@@ -487,6 +511,38 @@ textarea {
 
 .resource-sparkline.success polyline {
     stroke: var(--xui-success);
+}
+
+.resource-sparkline.violet polyline {
+    stroke: #8158dc;
+}
+
+.network-speed-sparkline .upload-line {
+    stroke: #5f7fe8;
+}
+
+.network-speed-sparkline .download-line {
+    stroke: #28a87d;
+}
+
+.network-legend span::before,
+.daily-traffic-legend span::before {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 4px;
+    border-radius: 50%;
+    content: '';
+}
+
+.network-legend .upload::before,
+.daily-traffic-legend .upload::before {
+    background: #5f7fe8;
+}
+
+.network-legend .download::before,
+.daily-traffic-legend .download::before {
+    background: #28a87d;
 }
 
 .monthly-traffic-card {
@@ -592,6 +648,16 @@ textarea {
     height: 100%;
     align-items: center;
     gap: 16px;
+}
+
+.overview-resource-card .overview-content {
+    width: 100%;
+}
+
+.overview-resource-progress {
+    display: block;
+    width: 100%;
+    margin: 3px 0 1px;
 }
 
 .overview-icon {
@@ -2524,9 +2590,30 @@ body.login-page {
     flex-direction: column;
 }
 
-.daily-traffic-head > strong {
+.daily-traffic-head > strong,
+.daily-traffic-summary strong {
     color: var(--xui-muted);
     font-size: 11px;
+}
+
+.daily-traffic-summary {
+    display: flex;
+    align-items: flex-end;
+    flex-direction: column;
+    text-align: right;
+}
+
+.daily-traffic-summary small {
+    white-space: nowrap;
+}
+
+.daily-traffic-legend {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin: -6px 0 6px;
+    color: var(--xui-muted);
+    font-size: 9px;
 }
 
 .daily-traffic-chart {
@@ -2571,10 +2658,33 @@ body.login-page {
     right: 0;
     bottom: 0;
     left: 0;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
     border-radius: 7px 7px 4px 4px;
-    background: linear-gradient(180deg, #7798ff, var(--xui-primary));
+    background: transparent;
     transition: height .3s ease;
+}
+
+.daily-traffic-bar i {
+    display: block;
+    width: 100%;
+    min-height: 0;
+    flex: 0 0 auto;
+}
+
+.daily-traffic-bar .upload {
+    background: linear-gradient(180deg, #7d98ee, #5f7fe8);
+}
+
+.daily-traffic-bar .download {
+    background: linear-gradient(180deg, #53c89f, #28a87d);
+}
+
+.daily-traffic-bar .legacy-total {
+    height: 100%;
+    background: linear-gradient(180deg, #7798ff, var(--xui-primary));
 }
 
 @media (max-width: 900px) {

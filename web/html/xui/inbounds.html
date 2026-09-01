@@ -35,9 +35,9 @@
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon"><a-icon type="cloud-upload"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">累计上传</div>
+                                            <div class="overview-label">本周期上传</div>
                                             <div class="overview-value">[[ sizeFormat(total.up) ]]</div>
-                                            <div class="overview-meta">全部入站</div>
+                                            <div class="overview-meta">全部入站 · 每月 [[ trafficResetDay ]] 日重置</div>
                                         </div>
                                     </a-card>
                                 </a-col>
@@ -45,9 +45,9 @@
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon violet"><a-icon type="cloud-download"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">累计下载</div>
+                                            <div class="overview-label">本周期下载</div>
                                             <div class="overview-value">[[ sizeFormat(total.down) ]]</div>
-                                            <div class="overview-meta">全部入站</div>
+                                            <div class="overview-meta">全部入站 · 每月 [[ trafficResetDay ]] 日重置</div>
                                         </div>
                                     </a-card>
                                 </a-col>
@@ -55,7 +55,7 @@
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon success"><a-icon type="bar-chart"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">总流量</div>
+                                            <div class="overview-label">本周期总流量</div>
                                             <div class="overview-value">[[ sizeFormat(total.up + total.down) ]]</div>
                                             <div class="overview-meta">上传与下载合计</div>
                                         </div>
@@ -160,7 +160,7 @@
                                     <template slot="traffic" slot-scope="text, dbInbound">
                                         <div class="traffic-cell">
                                             <div class="traffic-values">
-                                                <span>↑ [[ sizeFormat(dbInbound.up) ]]</span>
+                                                <span>本周期 ↑ [[ sizeFormat(dbInbound.up) ]]</span>
                                                 <span>↓ [[ sizeFormat(dbInbound.down) ]]</span>
                                             </div>
                                             <a-progress v-if="dbInbound.total > 0" :show-info="false" :stroke-width="6"
@@ -233,8 +233,8 @@
                                     </div>
                                     <div class="mobile-traffic-block">
                                         <div class="traffic-values">
-                                            <span>上传 [[ sizeFormat(dbInbound.up) ]]</span>
-                                            <span>下载 [[ sizeFormat(dbInbound.down) ]]</span>
+                                            <span>本周期上传 [[ sizeFormat(dbInbound.up) ]]</span>
+                                            <span>本周期下载 [[ sizeFormat(dbInbound.down) ]]</span>
                                         </div>
                                         <a-progress v-if="dbInbound.total > 0" :show-info="false" :stroke-width="6"
                                                     :stroke-color="trafficColor(dbInbound)"
@@ -296,7 +296,7 @@
         dataIndex: "port",
         width: 90,
     }, {
-        title: "流量与限额",
+        title: "本周期流量与月度限额",
         align: 'center',
         width: 260,
         scopedSlots: { customRender: 'traffic' },
@@ -346,6 +346,7 @@
                 quick: 'all',
             },
             loadError: false,
+            trafficResetDay: 1,
             pendingInboundIds: {},
             filtersInitialized: false,
         },
@@ -372,6 +373,15 @@
                 } finally {
                     this.loading(false);
                     this.refreshing = false;
+                }
+            },
+            async getTrafficSetting() {
+                const msg = await HttpUtil.post('/xui/setting/all');
+                if (msg.success && msg.obj) {
+                    const resetDay = Number(msg.obj.trafficResetDay);
+                    if (Number.isInteger(resetDay) && resetDay >= 1 && resetDay <= 31) {
+                        this.trafficResetDay = resetDay;
+                    }
                 }
             },
             setInbounds(dbInbounds) {
@@ -449,13 +459,13 @@
             },
             trafficLimitLabel(dbInbound) {
                 if (dbInbound.total <= 0) {
-                    return '流量无限制';
+                    return '月度不限额';
                 }
                 const used = dbInbound.up + dbInbound.down;
                 if (used >= dbInbound.total) {
-                    return `限额已用尽 · ${sizeFormat(dbInbound.total)}`;
+                    return `月度限额已用尽 · ${sizeFormat(dbInbound.total)}`;
                 }
-                return `已用 ${this.trafficPercent(dbInbound)}% · 限额 ${sizeFormat(dbInbound.total)}`;
+                return `已用 ${this.trafficPercent(dbInbound)}% · 月度限额 ${sizeFormat(dbInbound.total)}`;
             },
             streamLabel(dbInbound) {
                 const inbound = this.inboundById[dbInbound.id];
@@ -596,7 +606,7 @@
             resetTraffic(dbInbound) {
                 this.$confirm({
                     title: '重置流量',
-                    content: `将清空“${dbInbound.remark || '未命名入站'}”（端口 ${dbInbound.port}）的上传与下载统计，配置本身不会改变。`,
+                    content: `将清空“${dbInbound.remark || '未命名入站'}”（端口 ${dbInbound.port}）本周期的上传与下载统计，月度限额和配置不会改变。`,
                     okText: '重置',
                     cancelText: '取消',
                     onOk: async () => {
@@ -685,6 +695,7 @@
             this.syncFiltersToUrl();
             document.addEventListener('keydown', this.handleKeyboardShortcut);
             this.getDBInbounds();
+            this.getTrafficSetting();
         },
         beforeDestroy() {
             document.removeEventListener('keydown', this.handleKeyboardShortcut);

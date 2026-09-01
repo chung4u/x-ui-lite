@@ -5,7 +5,7 @@
             <div class="form-section-icon"><a-icon type="profile"></a-icon></div>
             <div>
                 <h3>基础配置</h3>
-                <p>确定入站名称、协议、端口、限额与到期时间。</p>
+                <p>确定入站名称、协议、端口、月度限额与到期时间。</p>
             </div>
         </div>
         <a-form class="inbound-base-form" layout="vertical">
@@ -31,7 +31,7 @@
             </a-form-item>
             <a-form-item>
                 <span slot="label">
-                    总流量 (GB)
+                    月度流量限额 (GB)
                     <a-tooltip title="0 表示不限制"><a-icon type="question-circle" theme="filled"></a-icon></a-tooltip>
                 </span>
                 <a-input-number v-model="dbInbound.totalGB" :min="0"></a-input-number>

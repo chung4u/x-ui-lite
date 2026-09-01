@@ -33,6 +33,12 @@ type Inbound struct {
 	Enable     bool   `json:"enable" form:"enable"`
 	ExpiryTime int64  `json:"expiryTime" form:"expiryTime"`
 
+	// Monthly traffic cycle metadata. Up and Down contain usage for the
+	// current cycle; Total is the monthly quota configured for this inbound.
+	TrafficResetPeriod string `json:"trafficResetPeriod" gorm:"not null;default:''"`
+	TrafficResetDay    int    `json:"trafficResetDay" gorm:"not null;default:1"`
+	TrafficExhausted   bool   `json:"trafficExhausted" gorm:"not null;default:false"`
+
 	// config part
 	Listen         string   `json:"listen" form:"listen"`
 	Port           int      `json:"port" form:"port" gorm:"unique"`

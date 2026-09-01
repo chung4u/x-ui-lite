@@ -95,27 +95,33 @@
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="resource-card no-sparkline" hoverable>
+                                    <a-card class="resource-card network-priority-card" hoverable>
                                         <div class="resource-card-head">
-                                            <div class="resource-icon violet"><a-icon type="hdd"></a-icon></div>
-                                            <div class="resource-value">[[ status.swap.percent ]]%</div>
+                                            <div class="resource-icon"><a-icon type="swap"></a-icon></div>
+                                            <div class="resource-value resource-value-dual">
+                                                <span><a-icon type="arrow-up"></a-icon> [[ compactSize(status.netIO.up) ]]/s</span>
+                                                <span><a-icon type="arrow-down"></a-icon> [[ compactSize(status.netIO.down) ]]/s</span>
+                                            </div>
                                         </div>
-                                        <div class="resource-label">交换空间</div>
-                                        <a-progress :show-info="false" :stroke-width="7"
-                                                    :stroke-color="status.swap.color" :percent="status.swap.percent"></a-progress>
-                                        <div class="resource-detail">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
+                                        <div class="resource-label">实时网速</div>
+                                        <svg class="resource-sparkline network-speed-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                                            <polyline class="upload-line" :points="networkSpeedSparklinePoints('netUp')"></polyline>
+                                            <polyline class="download-line" :points="networkSpeedSparklinePoints('netDown')"></polyline>
+                                        </svg>
+                                        <div class="resource-detail network-legend"><span class="upload">上传</span><span class="download">下载</span> · 最近 60 秒</div>
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="resource-card no-sparkline" hoverable>
+                                    <a-card class="resource-card network-priority-card" hoverable>
                                         <div class="resource-card-head">
-                                            <div class="resource-icon warning"><a-icon type="pie-chart"></a-icon></div>
-                                            <div class="resource-value">[[ status.disk.percent ]]%</div>
+                                            <div class="resource-icon violet"><a-icon type="global"></a-icon></div>
+                                            <div class="resource-value">[[ totalConnections ]]</div>
                                         </div>
-                                        <div class="resource-label">磁盘空间</div>
-                                        <a-progress :show-info="false" :stroke-width="7"
-                                                    :stroke-color="status.disk.color" :percent="status.disk.percent"></a-progress>
-                                        <div class="resource-detail">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
+                                        <div class="resource-label">网络连接</div>
+                                        <svg class="resource-sparkline violet" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                                            <polyline :points="connectionSparklinePoints()"></polyline>
+                                        </svg>
+                                        <div class="resource-detail">[[ status.tcpCount ]] TCP · [[ status.udpCount ]] UDP · 最近 60 秒</div>
                                     </a-card>
                                 </a-col>
                             </a-row>
@@ -162,17 +168,31 @@
                                     <div class="daily-traffic-head">
                                         <div>
                                             <span>每日流量趋势</span>
-                                            <small>上传与下载合计，从启用记录后开始统计</small>
+                                            <small>最近 14 天历史，包含今日实时数据</small>
                                         </div>
-                                        <strong>[[ trafficHistoryRange ]]</strong>
+                                        <div class="daily-traffic-summary">
+                                            <strong>[[ trafficHistoryRange ]]</strong>
+                                            <small>合计 [[ compactSize(trafficTwoWeekTotal) ]] · 日均 [[ compactSize(trafficTwoWeekAverage) ]]</small>
+                                        </div>
+                                    </div>
+                                    <div class="daily-traffic-legend" aria-hidden="true">
+                                        <span class="upload">上传</span>
+                                        <span class="download">下载</span>
                                     </div>
                                     <div class="daily-traffic-chart" v-if="status.monthlyTraffic.daily.length > 0"
                                          role="img" :aria-label="trafficTrendAriaLabel">
                                         <div class="daily-traffic-column" v-for="day in status.monthlyTraffic.daily" :key="day.date"
-                                             :title="`${moment(day.date).format('MM 月 DD 日')}：${sizeFormat(day.used)}`">
+                                             :title="`${moment(day.date).format('MM 月 DD 日')}：上传 ${sizeFormat(day.up)}，下载 ${sizeFormat(day.down)}，合计 ${sizeFormat(day.used)}`">
                                             <span class="daily-traffic-value">[[ compactSize(day.used) ]]</span>
                                             <span class="daily-traffic-bar-track">
-                                                <span class="daily-traffic-bar" :style="{ height: trafficBarHeight(day.used) }"></span>
+                                                <span class="daily-traffic-bar" :style="{ height: trafficBarHeight(day.used) }">
+                                                    <i v-if="Number(day.used || 0) > 0 && Number(day.up || 0) + Number(day.down || 0) === 0"
+                                                       class="legacy-total"></i>
+                                                    <template v-else>
+                                                        <i class="download" :style="{ height: trafficPartHeight(day.down, day.used) }"></i>
+                                                        <i class="upload" :style="{ height: trafficPartHeight(day.up, day.used) }"></i>
+                                                    </template>
+                                                </span>
                                             </span>
                                             <span class="daily-traffic-date">[[ moment(day.date).format('DD') ]]</span>
                                         </div>
@@ -212,25 +232,26 @@
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
-                                    <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon"><a-icon type="swap"></a-icon></div>
+                                    <a-card class="overview-card overview-resource-card" hoverable>
+                                        <div class="overview-icon violet"><a-icon type="hdd"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">实时网速</div>
-                                            <div class="overview-value split-value">
-                                                <span class="split-value-item"><a-icon type="arrow-up"></a-icon>[[ sizeFormat(status.netIO.up) ]]/s</span>
-                                                <span class="split-value-item"><a-icon type="arrow-down"></a-icon>[[ sizeFormat(status.netIO.down) ]]/s</span>
-                                            </div>
-                                            <div class="overview-meta">上传 / 下载</div>
+                                            <div class="overview-label">交换空间</div>
+                                            <div class="overview-value">[[ status.swap.percent ]]%</div>
+                                            <a-progress class="overview-resource-progress" :show-info="false" :stroke-width="6"
+                                                        :stroke-color="status.swap.color" :percent="status.swap.percent"></a-progress>
+                                            <div class="overview-meta">[[ sizeFormat(status.swap.current) ]] / [[ sizeFormat(status.swap.total) ]]</div>
                                         </div>
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
-                                    <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon violet"><a-icon type="global"></a-icon></div>
+                                    <a-card class="overview-card overview-resource-card" hoverable>
+                                        <div class="overview-icon warning"><a-icon type="pie-chart"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">网络连接</div>
-                                            <div class="overview-value">[[ status.tcpCount ]] TCP · [[ status.udpCount ]] UDP</div>
-                                            <div class="overview-meta">所有网卡当前连接总数</div>
+                                            <div class="overview-label">磁盘空间</div>
+                                            <div class="overview-value">[[ status.disk.percent ]]%</div>
+                                            <a-progress class="overview-resource-progress" :show-info="false" :stroke-width="6"
+                                                        :stroke-color="status.disk.color" :percent="status.disk.percent"></a-progress>
+                                            <div class="overview-meta">[[ sizeFormat(status.disk.current) ]] / [[ sizeFormat(status.disk.total) ]]</div>
                                         </div>
                                     </a-card>
                                 </a-col>
@@ -490,23 +511,39 @@
                 this.statusHistory.push({
                     cpu: this.status.cpu.percent,
                     mem: this.status.mem.percent,
-                    swap: this.status.swap.percent,
-                    disk: this.status.disk.percent,
+                    netUp: Number(this.status.netIO.up || 0),
+                    netDown: Number(this.status.netIO.down || 0),
+                    connections: Number(this.status.tcpCount || 0) + Number(this.status.udpCount || 0),
                 });
                 if (this.statusHistory.length > 30) {
                     this.statusHistory.shift();
                 }
             },
             sparklinePoints(metric) {
+                return this.scaledSparklinePoints(metric, 100);
+            },
+            scaledSparklinePoints(metric, maximum) {
                 if (this.statusHistory.length === 0) {
                     return '0,22 100,22';
                 }
+                const scale = Math.max(1, Number(maximum) || 0);
                 return this.statusHistory.map((sample, index) => {
                     const x = this.statusHistory.length === 1 ? 0 : index / (this.statusHistory.length - 1) * 100;
-                    const value = Math.max(0, Math.min(100, Number(sample[metric]) || 0));
-                    const y = 22 - value / 100 * 20;
+                    const value = Math.max(0, Math.min(scale, Number(sample[metric]) || 0));
+                    const y = 22 - value / scale * 20;
                     return `${toFixed(x, 2)},${toFixed(y, 2)}`;
                 }).join(' ');
+            },
+            networkSpeedSparklinePoints(metric) {
+                const maximum = Math.max(1, ...this.statusHistory.map(sample => Math.max(
+                    Number(sample.netUp || 0),
+                    Number(sample.netDown || 0),
+                )));
+                return this.scaledSparklinePoints(metric, maximum);
+            },
+            connectionSparklinePoints() {
+                const maximum = Math.max(1, ...this.statusHistory.map(sample => Number(sample.connections || 0)));
+                return this.scaledSparklinePoints('connections', maximum);
             },
             async getInboundHealth() {
                 const msg = await HttpUtil.post('/xui/inbound/list');
@@ -559,6 +596,11 @@
                 const max = this.trafficHistoryMax;
                 if (max <= 0) return '4px';
                 return `${Math.max(6, Number(used || 0) / max * 100)}%`;
+            },
+            trafficPartHeight(part, used) {
+                const total = Number(used || 0);
+                if (total <= 0) return '0%';
+                return `${Math.max(0, Math.min(100, Number(part || 0) / total * 100))}%`;
             },
             async pollStatus() {
                 if (document.hidden) {
@@ -730,8 +772,18 @@
             },
             trafficTrendAriaLabel() {
                 return this.status.monthlyTraffic.daily
-                    .map(day => `${moment(day.date).format('MM 月 DD 日')} ${sizeFormat(day.used)}`)
+                    .map(day => `${moment(day.date).format('MM 月 DD 日')} 上传 ${sizeFormat(day.up)}，下载 ${sizeFormat(day.down)}，合计 ${sizeFormat(day.used)}`)
                     .join('，');
+            },
+            totalConnections() {
+                return Number(this.status.tcpCount || 0) + Number(this.status.udpCount || 0);
+            },
+            trafficTwoWeekTotal() {
+                return this.status.monthlyTraffic.daily.reduce((sum, day) => sum + Number(day.used || 0), 0);
+            },
+            trafficTwoWeekAverage() {
+                const daily = this.status.monthlyTraffic.daily;
+                return daily.length > 0 ? Math.round(this.trafficTwoWeekTotal / daily.length) : 0;
             },
             forecastConfidenceLabel() {
                 const labels = {high: '可信度高', medium: '可信度中', low: '样本较少', insufficient: '等待样本'};

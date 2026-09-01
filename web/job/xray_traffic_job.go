@@ -1,6 +1,7 @@
 package job
 
 import (
+	"time"
 	"x-ui/logger"
 	"x-ui/web/service"
 )
@@ -15,6 +16,14 @@ func NewXrayTrafficJob() *XrayTrafficJob {
 }
 
 func (j *XrayTrafficJob) Run() {
+	needsRestart, err := j.inboundService.SyncMonthlyTrafficPeriod(time.Now())
+	if err != nil {
+		logger.Warning("sync inbound monthly traffic period failed:", err)
+		return
+	}
+	if needsRestart {
+		j.xrayService.SetToNeedRestart()
+	}
 	if !j.xrayService.IsXrayRunning() {
 		return
 	}

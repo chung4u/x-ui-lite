@@ -110,14 +110,50 @@ func TestIsVirtualTrafficInterface(t *testing.T) {
 	}
 }
 
-func TestTrafficDailySeriesSortsDates(t *testing.T) {
-	got := trafficDailySeries(map[string]uint64{
-		"2026-08-28": 30,
-		"2026-08-26": 10,
-		"2026-08-27": 20,
-	})
-	if len(got) != 3 || got[0].Date != "2026-08-26" || got[2].Date != "2026-08-28" {
-		t.Fatalf("trafficDailySeries() returned unexpected order: %#v", got)
+func TestTrafficDailySeriesReturnsRollingTwoWeeks(t *testing.T) {
+	location := time.FixedZone("UTC+8", 8*60*60)
+	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, location)
+	got := trafficDailySeries(
+		map[string]uint64{"2026-08-31": 30, "2026-09-01": 50},
+		map[string]uint64{"2026-08-31": 10, "2026-09-01": 20},
+		map[string]uint64{"2026-08-31": 20, "2026-09-01": 30},
+		now,
+		14,
+	)
+	if len(got) != 14 || got[0].Date != "2026-08-19" || got[13].Date != "2026-09-01" {
+		t.Fatalf("trafficDailySeries() returned unexpected range: %#v", got)
+	}
+	if got[12].Used != 30 || got[12].Up != 10 || got[12].Down != 20 {
+		t.Fatalf("trafficDailySeries() lost upload/download detail: %#v", got[12])
+	}
+	if got[0].Used != 0 {
+		t.Fatalf("trafficDailySeries() should fill missing dates with zero: %#v", got[0])
+	}
+}
+
+func TestTrafficDailyForPeriodKeepsForecastInsideCurrentCycle(t *testing.T) {
+	location := time.FixedZone("UTC+8", 8*60*60)
+	periodStart := time.Date(2026, time.September, 1, 0, 0, 0, 0, location)
+	now := time.Date(2026, time.September, 2, 12, 0, 0, 0, location)
+	got := trafficDailyForPeriod(map[string]uint64{
+		"2026-08-31": 100,
+		"2026-09-01": 200,
+		"2026-09-02": 300,
+	}, periodStart, now)
+	if len(got) != 2 || got["2026-08-31"] != 0 || got["2026-09-01"] != 200 || got["2026-09-02"] != 300 {
+		t.Fatalf("trafficDailyForPeriod() = %#v", got)
+	}
+}
+
+func TestTrimTrafficDailyMap(t *testing.T) {
+	location := time.FixedZone("UTC+8", 8*60*60)
+	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, location)
+	daily := map[string]uint64{"2026-07-01": 1, "2026-08-19": 2, "2026-09-01": 3}
+	if !trimTrafficDailyMap(daily, now, 14) {
+		t.Fatal("trimTrafficDailyMap() should report removed history")
+	}
+	if len(daily) != 2 || daily["2026-08-19"] != 2 || daily["2026-09-01"] != 3 {
+		t.Fatalf("trimTrafficDailyMap() = %#v", daily)
 	}
 }
 

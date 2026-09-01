@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +87,8 @@ type MonthlyTraffic struct {
 type DailyTraffic struct {
 	Date string `json:"date"`
 	Used uint64 `json:"used"`
+	Up   uint64 `json:"up"`
+	Down uint64 `json:"down"`
 }
 
 type Release struct {
@@ -109,6 +110,11 @@ type ServerService struct {
 }
 
 const bytesPerGB = uint64(1024 * 1024 * 1024)
+
+const (
+	trafficHistoryDays   = 14
+	trafficRetentionDays = 45
+)
 
 func trafficCounterDelta(current, previous uint64) uint64 {
 	if current >= previous {
@@ -145,17 +151,49 @@ func trafficNextReset(periodStart time.Time, resetDay int) time.Time {
 	return trafficResetDate(nextMonth.Year(), nextMonth.Month(), resetDay, periodStart.Location())
 }
 
-func trafficDailySeries(daily map[string]uint64) []DailyTraffic {
-	keys := make([]string, 0, len(daily))
-	for date := range daily {
-		keys = append(keys, date)
+func trafficDailySeries(daily, upload, download map[string]uint64, now time.Time, days int) []DailyTraffic {
+	if days < 1 {
+		return nil
 	}
-	sort.Strings(keys)
-	series := make([]DailyTraffic, 0, len(keys))
-	for _, date := range keys {
-		series = append(series, DailyTraffic{Date: date, Used: daily[date]})
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(days - 1))
+	series := make([]DailyTraffic, 0, days)
+	for index := 0; index < days; index++ {
+		date := day.AddDate(0, 0, index).Format("2006-01-02")
+		series = append(series, DailyTraffic{
+			Date: date,
+			Used: daily[date],
+			Up:   upload[date],
+			Down: download[date],
+		})
 	}
 	return series
+}
+
+func trafficDailyForPeriod(daily map[string]uint64, periodStart, now time.Time) map[string]uint64 {
+	result := make(map[string]uint64)
+	startKey := periodStart.Format("2006-01-02")
+	endKey := now.Format("2006-01-02")
+	for date, value := range daily {
+		if date >= startKey && date <= endKey {
+			result[date] = value
+		}
+	}
+	return result
+}
+
+func trimTrafficDailyMap(daily map[string]uint64, now time.Time, retentionDays int) bool {
+	if retentionDays < 1 {
+		return false
+	}
+	oldest := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(retentionDays - 1)).Format("2006-01-02")
+	changed := false
+	for date := range daily {
+		if date < oldest {
+			delete(daily, date)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func trafficForecast(used uint64, daily map[string]uint64, now, nextReset time.Time) (average, projected uint64, confidence string) {
@@ -280,11 +318,27 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.UsedBytes = 0
 		s.trafficState.LastSent = sent
 		s.trafficState.LastRecv = received
-		s.trafficState.DailyTraffic = make(map[string]uint64)
 		forcePersist = true
 	}
 	if s.trafficState.DailyTraffic == nil {
 		s.trafficState.DailyTraffic = make(map[string]uint64)
+		forcePersist = true
+	}
+	if s.trafficState.DailyUpload == nil {
+		s.trafficState.DailyUpload = make(map[string]uint64)
+		forcePersist = true
+	}
+	if s.trafficState.DailyDownload == nil {
+		s.trafficState.DailyDownload = make(map[string]uint64)
+		forcePersist = true
+	}
+	if trimTrafficDailyMap(s.trafficState.DailyTraffic, localNow, trafficRetentionDays) {
+		forcePersist = true
+	}
+	if trimTrafficDailyMap(s.trafficState.DailyUpload, localNow, trafficRetentionDays) {
+		forcePersist = true
+	}
+	if trimTrafficDailyMap(s.trafficState.DailyDownload, localNow, trafficRetentionDays) {
 		forcePersist = true
 	}
 
@@ -296,7 +350,6 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.UsedBytes = 0
 		s.trafficState.LastSent = sent
 		s.trafficState.LastRecv = received
-		s.trafficState.DailyTraffic = make(map[string]uint64)
 		s.trafficSnapshot = MonthlyTraffic{
 			Enabled:     false,
 			ResetDay:    s.trafficResetDay,
@@ -310,9 +363,14 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 			s.trafficState.LastRecv = received
 			forcePersist = true
 		} else {
-			delta := trafficCounterDelta(sent, s.trafficState.LastSent) + trafficCounterDelta(received, s.trafficState.LastRecv)
+			uploadDelta := trafficCounterDelta(sent, s.trafficState.LastSent)
+			downloadDelta := trafficCounterDelta(received, s.trafficState.LastRecv)
+			delta := uploadDelta + downloadDelta
+			dateKey := localNow.Format("2006-01-02")
 			s.trafficState.UsedBytes += delta
-			s.trafficState.DailyTraffic[localNow.Format("2006-01-02")] += delta
+			s.trafficState.DailyTraffic[dateKey] += delta
+			s.trafficState.DailyUpload[dateKey] += uploadDelta
+			s.trafficState.DailyDownload[dateKey] += downloadDelta
 			s.trafficState.LastSent = sent
 			s.trafficState.LastRecv = received
 		}
@@ -324,7 +382,8 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 
 		limit := uint64(s.trafficLimitGB) * bytesPerGB
 		nextReset := trafficNextReset(periodStart, s.trafficResetDay)
-		averageDaily, projected, confidence := trafficForecast(s.trafficState.UsedBytes, s.trafficState.DailyTraffic, localNow, nextReset)
+		periodDaily := trafficDailyForPeriod(s.trafficState.DailyTraffic, periodStart, localNow)
+		averageDaily, projected, confidence := trafficForecast(s.trafficState.UsedBytes, periodDaily, localNow, nextReset)
 		remaining := uint64(0)
 		if s.trafficState.UsedBytes < limit {
 			remaining = limit - s.trafficState.UsedBytes
@@ -345,7 +404,7 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 			ResetDay:           s.trafficResetDay,
 			PeriodStart:        periodStart,
 			NextReset:          nextReset,
-			Daily:              trafficDailySeries(s.trafficState.DailyTraffic),
+			Daily:              trafficDailySeries(s.trafficState.DailyTraffic, s.trafficState.DailyUpload, s.trafficState.DailyDownload, localNow, trafficHistoryDays),
 			AverageDaily:       averageDaily,
 			ProjectedPeriodEnd: projected,
 			ForecastConfidence: confidence,

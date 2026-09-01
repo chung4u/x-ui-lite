@@ -78,7 +78,7 @@
                 return '请选择入站协议。';
             }
             if (!Number.isFinite(Number(this.dbInbound.totalGB)) || Number(this.dbInbound.totalGB) < 0) {
-                return '总流量限额不能小于 0。';
+                return '月度流量限额不能小于 0。';
             }
             return '';
         },
