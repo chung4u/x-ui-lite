@@ -138,6 +138,9 @@
                                                 管理 <a-icon type="down"></a-icon>
                                             </a-button>
                                             <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
+                                                <a-menu-item key="qrcode">
+                                                    <a-icon type="qrcode"></a-icon>二维码与复制
+                                                </a-menu-item>
                                                 <a-menu-item key="users">
                                                     <a-icon type="team"></a-icon>用户与下载
                                                 </a-menu-item>
@@ -523,6 +526,9 @@
                     return;
                 }
                 switch (action.key) {
+                    case "qrcode":
+                        this.showQrcode(dbInbound);
+                        break;
                     case "users":
                         this.openUsers(dbInbound);
                         break;
@@ -569,6 +575,27 @@
                         await this.updateInbound(inbound, editableInbound, userModal);
                     },
                 });
+            },
+            async showQrcode(dbInbound) {
+                const inbound = dbInbound.toInbound();
+                const user = inbound.settings.vlesses[0];
+                if (!user) {
+                    this.$message.error('该入站暂未配置用户。');
+                    return;
+                }
+                this.setPending(dbInbound.id, true);
+                try {
+                    const msg = await HttpUtil.post(`/xui/inbound/${dbInbound.id}/userProfile`, {
+                        clientId: user.id,
+                        host: location.hostname,
+                        name: dbInbound.userDisplayName(user, 0),
+                    });
+                    if (msg.success && msg.obj && msg.obj.link) {
+                        qrModal.show(`${dbInbound.remark || '未命名入站'} · 二维码`, msg.obj.link);
+                    }
+                } finally {
+                    this.setPending(dbInbound.id, false);
+                }
             },
             inboundPayload(inbound, dbInbound) {
                 return {
@@ -786,6 +813,7 @@
 {{template "inboundModal"}}
 {{template "inboundUsersModal"}}
 {{template "promptModal"}}
+{{template "qrcodeModal"}}
 {{template "textModal"}}
 {{template "inboundInfoModal"}}
 </body>
