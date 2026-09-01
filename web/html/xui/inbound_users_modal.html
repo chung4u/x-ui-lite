@@ -1,0 +1,152 @@
+{{define "inboundUsersModal"}}
+<a-modal id="inbound-users-modal" :visible="userModal.visible" title="用户与下载"
+         :width="760" :closable="true" :mask-closable="false" @cancel="userModal.requestClose">
+    <div class="inbound-users-modal-head">
+        <div>
+            <strong>[[ userModal.dbInbound.remark || '未命名入站' ]]</strong>
+            <span>端口 [[ userModal.dbInbound.port ]] · VLESS</span>
+        </div>
+        <a-button type="primary" size="small" icon="user-add" @click="userModal.addUser">新增用户</a-button>
+    </div>
+    <a-alert class="inbound-users-notice" type="info" show-icon
+             message="每位用户拥有独立 UUID"
+             description="保存后即可分别复制 VLESS 链接或下载 Clash Verge 配置。"></a-alert>
+    <div class="inbound-user-list">
+        <article class="inbound-user-item" v-for="(user, index) in userModal.users" :key="user.id">
+            <div class="inbound-user-index">[[ index + 1 ]]</div>
+            <div class="inbound-user-fields">
+                <a-input v-model.trim="user.email" :aria-label="`用户 ${index + 1} 名称`" placeholder="用户名称，例如：iPhone"></a-input>
+                <a-input v-model.trim="user.id" :aria-label="`用户 ${index + 1} UUID`" placeholder="UUID"></a-input>
+            </div>
+            <div class="inbound-user-actions">
+                <a-button size="small" icon="copy" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.copyLink(user, index)">复制链接</a-button>
+                <a-button size="small" type="primary" icon="download" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.downloadConfig(user, index)">下载配置</a-button>
+                <a-button v-if="userModal.users.length > 1" size="small" type="link" icon="delete"
+                          @click="userModal.removeUser(index)">删除</a-button>
+            </div>
+        </article>
+    </div>
+    <template slot="footer">
+        <a-button @click="userModal.requestClose">取消</a-button>
+        <a-button type="primary" icon="save" :loading="userModal.confirmLoading" @click="userModal.save">保存用户</a-button>
+    </template>
+</a-modal>
+<script>
+    const userModal = {
+        visible: false,
+        confirmLoading: false,
+        dbInbound: new DBInbound(),
+        inbound: new Inbound(),
+        baseline: '',
+        confirm: null,
+        pendingUserIds: {},
+        get users() {
+            const settings = this.inbound.settings;
+            return settings && Array.isArray(settings.vlesses) ? settings.vlesses : [];
+        },
+        loading(value) {
+            this.confirmLoading = value;
+        },
+        isLoading(id) {
+            return !!this.pendingUserIds[id];
+        },
+        setLoading(id, value) {
+            if (value) Vue.set(this.pendingUserIds, id, true);
+            else Vue.delete(this.pendingUserIds, id);
+        },
+        stateSignature() {
+            return JSON.stringify(this.users.map(user => ({id: user.id, email: user.email, flow: user.flow})));
+        },
+        isDirty() {
+            return this.visible && this.baseline !== this.stateSignature();
+        },
+        addUser() {
+            userModal.inbound.settings.addVless();
+        },
+        removeUser(index) {
+            userModal.inbound.settings.delVless(index);
+        },
+        async getProfile(user, index) {
+            userModal.setLoading(user.id, true);
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${userModal.dbInbound.id}/userProfile`, {
+                    clientId: user.id,
+                    host: location.hostname,
+                    name: userModal.dbInbound.userDisplayName(user, index),
+                });
+                return msg.success ? msg.obj : null;
+            } finally {
+                userModal.setLoading(user.id, false);
+            }
+        },
+        async copyLink(user, index) {
+            const profile = await userModal.getProfile(user, index);
+            if (!profile) return;
+            const input = document.createElement('textarea');
+            input.value = profile.link;
+            input.setAttribute('readonly', '');
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+            app.$message.success('VLESS 链接已复制');
+        },
+        async downloadConfig(user, index) {
+            const profile = await userModal.getProfile(user, index);
+            if (!profile) return;
+            const blob = new Blob([profile.clashVergeConfig], {type: 'text/yaml;charset=utf-8'});
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = profile.fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+            app.$message.success('Clash Verge 配置已下载');
+        },
+        save() {
+            if (userModal.users.some(user => !String(user.id || '').trim())) {
+                app.$message.error('每位用户都需要 UUID。');
+                return;
+            }
+            ObjectUtil.execute(userModal.confirm, userModal.inbound, userModal.dbInbound);
+        },
+        show({dbInbound, inbound, confirm}) {
+            this.dbInbound = new DBInbound(dbInbound);
+            this.inbound = Inbound.fromJson(inbound.toJson());
+            this.confirm = confirm;
+            this.pendingUserIds = {};
+            this.visible = true;
+            this.baseline = this.stateSignature();
+        },
+        close() {
+            this.visible = false;
+            this.confirmLoading = false;
+            this.baseline = '';
+        },
+        requestClose() {
+            if (!userModal.isDirty()) {
+                userModal.close();
+                return;
+            }
+            Vue.prototype.$confirm({
+                title: '放弃用户更改？',
+                content: '尚未保存的用户调整将不会生效。',
+                okText: '放弃更改',
+                okType: 'danger',
+                cancelText: '继续编辑',
+                onOk: () => userModal.close(),
+            });
+        },
+    };
+
+    new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#inbound-users-modal',
+        data: { userModal },
+    });
+</script>
+{{end}}

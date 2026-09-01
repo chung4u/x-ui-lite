@@ -98,17 +98,13 @@
                                     <a-card class="resource-card network-priority-card" hoverable>
                                         <div class="resource-card-head">
                                             <div class="resource-icon"><a-icon type="swap"></a-icon></div>
-                                            <div class="resource-value resource-value-dual">
-                                                <span><a-icon type="arrow-up"></a-icon> [[ compactSize(status.netIO.up) ]]/s</span>
-                                                <span><a-icon type="arrow-down"></a-icon> [[ compactSize(status.netIO.down) ]]/s</span>
-                                            </div>
+                                            <div class="resource-value"><a-icon type="arrow-up"></a-icon> [[ compactSize(status.netIO.up) ]]/s</div>
                                         </div>
                                         <div class="resource-label">实时网速</div>
                                         <svg class="resource-sparkline network-speed-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
                                             <polyline class="upload-line" :points="networkSpeedSparklinePoints('netUp')"></polyline>
-                                            <polyline class="download-line" :points="networkSpeedSparklinePoints('netDown')"></polyline>
                                         </svg>
-                                        <div class="resource-detail network-legend"><span class="upload">上传</span><span class="download">下载</span> · 最近 60 秒</div>
+                                        <div class="resource-detail network-legend"><span class="upload">上传</span> · 最近 60 秒</div>
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
@@ -168,7 +164,6 @@
                                     <div class="daily-traffic-head">
                                         <div>
                                             <span>每日流量趋势</span>
-                                            <small>最近 14 天历史，包含今日实时数据</small>
                                         </div>
                                         <div class="daily-traffic-summary">
                                             <strong>[[ trafficHistoryRange ]]</strong>
@@ -535,10 +530,7 @@
                 }).join(' ');
             },
             networkSpeedSparklinePoints(metric) {
-                const maximum = Math.max(1, ...this.statusHistory.map(sample => Math.max(
-                    Number(sample.netUp || 0),
-                    Number(sample.netDown || 0),
-                )));
+                const maximum = Math.max(1, ...this.statusHistory.map(sample => Number(sample.netUp || 0)));
                 return this.scaledSparklinePoints(metric, maximum);
             },
             connectionSparklinePoints() {

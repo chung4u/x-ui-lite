@@ -1,15 +1,29 @@
 {{define "form/vless"}}
-<a-form layout="inline">
-    <a-form-item label="id">
-        <a-input v-model.trim="inbound.settings.vlesses[0].id"></a-input>
-    </a-form-item>
-    <a-form-item v-if="inbound.xtls" label="flow">
-        <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 150px">
-            <a-select-option value="">无</a-select-option>
-            <a-select-option v-for="key in FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>
-        </a-select>
-    </a-form-item>
-</a-form>
+<div class="vless-user-editor">
+    <div class="vless-user-editor-head">
+        <span>VLESS 用户</span>
+        <a-button type="primary" size="small" icon="user-add" @click="inbound.settings.addVless()">新增用户</a-button>
+    </div>
+    <div class="vless-user-row" v-for="(user, index) in inbound.settings.vlesses" :key="user.id">
+        <a-form layout="inline">
+            <a-form-item label="名称">
+                <a-input v-model.trim="user.email" placeholder="例如：iPhone"></a-input>
+            </a-form-item>
+            <a-form-item label="UUID">
+                <a-input v-model.trim="user.id"></a-input>
+            </a-form-item>
+            <a-form-item v-if="inbound.xtls" label="flow">
+                <a-select v-model="user.flow" style="width: 150px">
+                    <a-select-option value="">无</a-select-option>
+                    <a-select-option v-for="key in FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>
+                </a-select>
+            </a-form-item>
+            <a-form-item v-if="inbound.settings.vlesses.length > 1">
+                <a-button type="link" icon="delete" @click="inbound.settings.delVless(index)">删除</a-button>
+            </a-form-item>
+        </a-form>
+    </div>
+</div>
 
 <a-form layout="inline">
     <a-form-item label="fallbacks">

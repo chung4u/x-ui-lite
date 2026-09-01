@@ -5,18 +5,13 @@
             <div class="form-section-icon"><a-icon type="profile"></a-icon></div>
             <div>
                 <h3>基础配置</h3>
-                <p>确定入站名称、协议、端口、月度限额与到期时间。</p>
+                <p>确定入站名称、端口、月度限额与到期日期。</p>
             </div>
         </div>
         <a-form class="inbound-base-form" layout="vertical">
             <a-form-item label='{{ i18n "remark" }}'>
                 <a-input id="inbound-remark-input" v-model.trim="dbInbound.remark" placeholder="例如：主节点"
                          aria-label="入站备注"></a-input>
-            </a-form-item>
-            <a-form-item label='{{ i18n "protocol" }}'>
-                <a-select v-model="inbound.protocol">
-                    <a-select-option v-for="p in Protocols" :key="p" :value="p">[[ p ]]</a-select-option>
-                </a-select>
             </a-form-item>
             <a-form-item>
                 <span slot="label">
@@ -41,7 +36,7 @@
                     到期时间
                     <a-tooltip title="留空则永不到期"><a-icon type="question-circle" theme="filled"></a-icon></a-tooltip>
                 </span>
-                <a-date-picker :show-time="{ format: 'HH:mm' }" format="YYYY-MM-DD HH:mm"
+                <a-date-picker format="YYYY-MM-DD"
                                v-model="dbInbound._expiryTime"></a-date-picker>
             </a-form-item>
             <a-form-item label='{{ i18n "enable" }}'>
@@ -58,16 +53,10 @@
             <div class="form-section-icon success"><a-icon type="key"></a-icon></div>
             <div>
                 <h3>协议与认证</h3>
-                <p>仅修改当前协议需要的客户端身份与认证参数。</p>
+                <p>管理 VLESS 用户身份；每位用户均可单独下载配置。</p>
             </div>
         </div>
-        <template v-if="inbound.protocol === Protocols.VMESS">{{template "form/vmess"}}</template>
         <template v-if="inbound.protocol === Protocols.VLESS">{{template "form/vless"}}</template>
-        <template v-if="inbound.protocol === Protocols.TROJAN">{{template "form/trojan"}}</template>
-        <template v-if="inbound.protocol === Protocols.SHADOWSOCKS">{{template "form/shadowsocks"}}</template>
-        <template v-if="inbound.protocol === Protocols.DOKODEMO">{{template "form/dokodemo"}}</template>
-        <template v-if="inbound.protocol === Protocols.SOCKS">{{template "form/socks"}}</template>
-        <template v-if="inbound.protocol === Protocols.HTTP">{{template "form/http"}}</template>
     </section>
 
     <section class="inbound-form-section" v-if="inbound.canEnableStream()">
@@ -78,7 +67,10 @@
                 <p>选择 TCP、WebSocket、gRPC 等传输方式及其详细参数。</p>
             </div>
         </div>
-        {{template "form/streamSettings"}}
+        <a-alert v-if="inbound.stream.security === 'reality'" type="info" show-icon
+                 message="当前入站使用 Reality"
+                 description="Reality 传输参数将原样保留；如需调整请使用原始配置工具，以免影响现有用户。"></a-alert>
+        <template v-else>{{template "form/streamSettings"}}</template>
     </section>
 
     <section class="inbound-form-section" v-if="inbound.canEnableTls() || inbound.canSniffing()">
@@ -89,7 +81,10 @@
                 <p>证书和嗅探参数会影响连接兼容性，无特殊需求时保持现有值。</p>
             </div>
         </div>
-        <template v-if="inbound.canEnableTls()">{{template "form/tlsSettings"}}</template>
+        <a-alert v-if="inbound.stream.security === 'reality'" type="info" show-icon
+                 message="当前入站使用 Reality"
+                 description="为确保现有客户端持续可用，Reality 参数将在保存时原样保留。"></a-alert>
+        <template v-else-if="inbound.canEnableTls()">{{template "form/tlsSettings"}}</template>
         <template v-if="inbound.canSniffing()">{{template "form/sniffing"}}</template>
     </section>
 </div>

@@ -15,6 +15,11 @@
             <template v-else-if="type === 'textarea'">
                 <a-textarea :value="value" :aria-label="title" @input="emitInput" :auto-size="{ minRows: 10, maxRows: 10 }"></a-textarea>
             </template>
+            <template v-else-if="type === 'select'">
+                <a-select :value="value" :aria-label="title" @change="emitSelect">
+                    <a-select-option v-for="option in options" :key="option.value" :value="option.value"><span v-text="option.label"></span></a-select-option>
+                </a-select>
+            </template>
         </a-col>
     </a-row>
 </a-list-item>
@@ -23,7 +28,7 @@
 {{define "component/setting"}}
 <script>
     Vue.component('setting-list-item', {
-        props: ["type", "title", "desc", "value", "min", "max"],
+        props: ["type", "title", "desc", "value", "min", "max", "options"],
         template: `{{template "component/settingListItem"}}`,
         computed: {
             numberValue() {
@@ -42,6 +47,10 @@
             },
             emitNumber(value) {
                 this.$emit('input', value === null || value === undefined ? '' : Number(value));
+                this.$emit('changed');
+            },
+            emitSelect(value) {
+                this.$emit('input', value);
                 this.$emit('changed');
             },
         },

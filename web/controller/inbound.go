@@ -16,6 +16,12 @@ type InboundController struct {
 	xrayService    service.XrayService
 }
 
+type inboundUserProfileForm struct {
+	ClientID string `json:"clientId" form:"clientId"`
+	Host     string `json:"host" form:"host"`
+	Name     string `json:"name" form:"name"`
+}
+
 func NewInboundController(g *gin.RouterGroup) *InboundController {
 	a := &InboundController{}
 	a.initRouter(g)
@@ -30,6 +36,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
+	g.POST("/:id/userProfile", a.getUserProfile)
 }
 
 func (a *InboundController) startTask() {
@@ -63,6 +70,10 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		return
 	}
 	user := session.GetLoginUser(c)
+	if inbound.Protocol != model.VLESS {
+		jsonMsg(c, "添加", fmt.Errorf("仅支持 VLESS 入站"))
+		return
+	}
 	inbound.UserId = user.Id
 	inbound.Enable = true
 	inbound.Tag = fmt.Sprintf("inbound-%v", inbound.Port)
@@ -100,9 +111,29 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 		jsonMsg(c, "修改", err)
 		return
 	}
+	if inbound.Protocol != model.VLESS {
+		jsonMsg(c, "修改", fmt.Errorf("仅支持 VLESS 入站"))
+		return
+	}
 	err = a.inboundService.UpdateInbound(inbound)
 	jsonMsg(c, "修改", err)
 	if err == nil {
 		a.xrayService.SetToNeedRestart()
 	}
+}
+
+func (a *InboundController) getUserProfile(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonMsg(c, "获取用户配置", err)
+		return
+	}
+	form := &inboundUserProfileForm{}
+	if err = c.ShouldBind(form); err != nil {
+		jsonMsg(c, "获取用户配置", err)
+		return
+	}
+	user := session.GetLoginUser(c)
+	profile, err := a.inboundService.GetVLESSUserProfile(id, user.Id, form.ClientID, form.Host, form.Name)
+	jsonObj(c, profile, err)
 }

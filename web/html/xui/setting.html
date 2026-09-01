@@ -62,6 +62,26 @@
                                         <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webKeyFile" @changed="touchSettings"></setting-list-item>
                                         <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾，保存并重启面板后生效" v-model="allSetting.webBasePath" @changed="touchSettings"></setting-list-item>
                                     </a-list>
+                                    <section class="certificate-panel" aria-label="证书管理">
+                                        <div class="certificate-panel-head">
+                                            <div>
+                                                <span>证书管理</span>
+                                                <small>生成的自签名证书需保存配置并重启面板后启用。</small>
+                                            </div>
+                                            <div class="certificate-panel-actions">
+                                                <a-button icon="reload" :loading="loadingCertificate" :disabled="!allSetting.webCertFile"
+                                                          @click="loadCertificateInfo">读取信息</a-button>
+                                                <a-button type="primary" icon="safety-certificate" @click="openCertificateModal">生成自签名证书</a-button>
+                                            </div>
+                                        </div>
+                                        <div class="certificate-info-grid" v-if="certificateInfo">
+                                            <div><span>证书名称</span><strong>[[ certificateInfo.subject || '未标注' ]]</strong></div>
+                                            <div><span>有效期至</span><strong>[[ certificateInfo.notAfter ]] · 剩余 [[ certificateInfo.daysRemaining ]] 天</strong></div>
+                                            <div><span>签名算法</span><strong>[[ certificateInfo.algorithm ]]</strong></div>
+                                            <div><span>指纹</span><strong class="certificate-fingerprint">[[ certificateFingerprint ]]</strong></div>
+                                        </div>
+                                        <a-empty v-else description="尚未读取证书信息"></a-empty>
+                                    </section>
                                 </a-tab-pane>
                                 <a-tab-pane key="2" tab="用户设置">
                                     <a-form class="settings-user-form" @submit.native.prevent="updateUser">
@@ -98,7 +118,7 @@
                                 </a-tab-pane>
                                 <a-tab-pane key="5" tab="其他设置">
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="text" title="时区" desc="定时任务将按照该时区运行，保存并重启面板后生效" v-model="allSetting.timeLocation" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="select" title="时区" desc="定时任务和流量重置按所选时区运行；保存并重启面板后生效" v-model="allSetting.timeLocation" :options="timeZoneOptions" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                 </a-tab-pane>
                             </a-tabs>
@@ -142,6 +162,23 @@
             <a-back-top></a-back-top>
         </a-layout-content>
     </a-layout>
+    <a-modal v-model="certificateModal.visible" title="生成自签名证书" :confirm-loading="certificateModal.generating"
+         ok-text="生成并回填" cancel-text="取消" @ok="generateCertificate">
+    <a-alert type="warning" show-icon message="自签名证书不会自动被浏览器信任"
+             description="用于面板加密访问时，请在客户端手动信任；如需公网浏览器信任，请上传由可信 CA 签发的证书。"></a-alert>
+    <a-form class="certificate-generate-form" layout="vertical">
+        <a-form-item label="证书名称（域名或 IP）">
+            <a-input v-model.trim="certificateModal.commonName" placeholder="例如：panel.example.com"></a-input>
+        </a-form-item>
+        <a-form-item label="有效期">
+            <a-select v-model="certificateModal.validDays">
+                <a-select-option :value="90">90 天</a-select-option>
+                <a-select-option :value="365">365 天</a-select-option>
+                <a-select-option :value="825">825 天</a-select-option>
+            </a-select>
+        </a-form-item>
+    </a-form>
+    </a-modal>
 </a-layout>
 {{template "js" .}}
 {{template "component/setting"}}
@@ -162,6 +199,25 @@
             settingsLoadError: false,
             activeTab: '1',
             settingsRevision: 0,
+            loadingCertificate: false,
+            certificateInfo: null,
+            certificateModal: {
+                visible: false,
+                generating: false,
+                commonName: location.hostname,
+                validDays: 365,
+            },
+            timeZoneOptions: [
+                {value: 'Asia/Shanghai', label: '中国标准时间 · Asia/Shanghai'},
+                {value: 'Asia/Hong_Kong', label: '香港时间 · Asia/Hong_Kong'},
+                {value: 'Asia/Singapore', label: '新加坡时间 · Asia/Singapore'},
+                {value: 'Asia/Tokyo', label: '日本时间 · Asia/Tokyo'},
+                {value: 'UTC', label: '协调世界时 · UTC'},
+                {value: 'Europe/London', label: '英国时间 · Europe/London'},
+                {value: 'Europe/Berlin', label: '中欧时间 · Europe/Berlin'},
+                {value: 'America/New_York', label: '美国东部时间 · America/New_York'},
+                {value: 'America/Los_Angeles', label: '美国西部时间 · America/Los_Angeles'},
+            ],
         },
         methods: {
             loading(spinning = true) {
@@ -198,12 +254,55 @@
                 if (showLoading) this.loading(false);
                 if (msg.success && this.hasCompleteSettingData(msg.obj)) {
                     this.applyAllSetting(msg.obj);
+                    await this.loadCertificateInfo(false);
                     this.settingsLoadError = false;
                     return true;
                 } else {
                     this.settingsLoadError = true;
                     return false;
                 }
+            },
+            async loadCertificateInfo(showMessage = true) {
+                if (ObjectUtil.isEmpty(this.allSetting.webCertFile)) {
+                    this.certificateInfo = null;
+                    return false;
+                }
+                this.loadingCertificate = true;
+                const msg = await HttpUtil.post('/xui/setting/certificateInfo', {certFile: this.allSetting.webCertFile});
+                this.loadingCertificate = false;
+                if (msg.success) {
+                    this.certificateInfo = msg.obj;
+                    return true;
+                }
+                if (!showMessage) {
+                    this.certificateInfo = null;
+                }
+                return false;
+            },
+            openCertificateModal() {
+                this.certificateModal.commonName = location.hostname;
+                this.certificateModal.validDays = 365;
+                this.certificateModal.visible = true;
+            },
+            async generateCertificate() {
+                const commonName = this.certificateModal.commonName.trim();
+                if (!commonName) {
+                    this.$message.error('请填写证书名称。');
+                    return;
+                }
+                this.certificateModal.generating = true;
+                const msg = await HttpUtil.post('/xui/setting/generateCertificate', {
+                    commonName,
+                    validDays: this.certificateModal.validDays,
+                });
+                this.certificateModal.generating = false;
+                if (!msg.success) return;
+                this.allSetting.webCertFile = msg.obj.certFile;
+                this.allSetting.webKeyFile = msg.obj.keyFile;
+                this.certificateInfo = msg.obj.info;
+                this.certificateModal.visible = false;
+                this.touchSettings();
+                this.$message.success('证书已生成，请保存配置并重启面板后启用。');
             },
             validateSettings() {
                 const port = Number(this.allSetting.webPort);
@@ -380,6 +479,11 @@
                 if (hasCert && hasKey) return '已配置 HTTPS';
                 if (hasCert || hasKey) return '证书配置不完整';
                 return '未配置证书';
+            },
+            certificateFingerprint() {
+                const fingerprint = this.certificateInfo && this.certificateInfo.fingerprint;
+                if (!fingerprint) return '';
+                return `${fingerprint.slice(0, 16)}…${fingerprint.slice(-12)}`;
             },
             trafficQuotaLabel() {
                 const limit = Number(this.allSetting.trafficLimitGB || 0);

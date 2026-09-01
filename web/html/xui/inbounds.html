@@ -35,7 +35,7 @@
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon"><a-icon type="cloud-upload"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">本周期上传</div>
+                                            <div class="overview-label">上传</div>
                                             <div class="overview-value">[[ sizeFormat(total.up) ]]</div>
                                             <div class="overview-meta">全部入站 · 每月 [[ trafficResetDay ]] 日重置</div>
                                         </div>
@@ -45,7 +45,7 @@
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon violet"><a-icon type="cloud-download"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">本周期下载</div>
+                                            <div class="overview-label">下载</div>
                                             <div class="overview-value">[[ sizeFormat(total.down) ]]</div>
                                             <div class="overview-meta">全部入站 · 每月 [[ trafficResetDay ]] 日重置</div>
                                         </div>
@@ -55,7 +55,7 @@
                                     <a-card class="overview-card" hoverable>
                                         <div class="overview-icon success"><a-icon type="bar-chart"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">本周期总流量</div>
+                                            <div class="overview-label">总流量</div>
                                             <div class="overview-value">[[ sizeFormat(total.up + total.down) ]]</div>
                                             <div class="overview-meta">上传与下载合计</div>
                                         </div>
@@ -82,7 +82,12 @@
                                     <h2 class="section-title"><a-icon type="unordered-list"></a-icon>配置明细</h2>
                                     <div class="table-toolbar-copy">[[ filteredSummary ]]</div>
                                 </div>
-                                <a-button v-if="hasActiveFilters" icon="undo" @click="resetFilters">重置筛选</a-button>
+                                <div class="table-toolbar-actions">
+                                    <a-button type="link" @click="showStreamColumn = !showStreamColumn">
+                                        [[ showStreamColumn ? '隐藏传输配置' : '显示传输配置' ]]
+                                    </a-button>
+                                    <a-button v-if="hasActiveFilters" icon="undo" @click="resetFilters">重置筛选</a-button>
+                                </div>
                             </div>
                             <div class="inbound-quick-filters" aria-label="入站快捷状态筛选">
                                 <span class="quick-filter-label">快捷查看</span>
@@ -97,16 +102,10 @@
                                 </a-radio-group>
                             </div>
                             <div class="inbound-filter-bar" aria-label="入站筛选条件">
-                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口、协议或 ID"
+                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口或 ID"
                                          aria-label="搜索入站配置" ref="filterSearch">
                                     <a-icon slot="prefix" type="search"></a-icon>
                                 </a-input>
-                                <a-select v-model="filters.protocol" aria-label="按协议筛选">
-                                    <a-select-option value="all">全部协议</a-select-option>
-                                    <a-select-option v-for="protocol in protocolOptions" :key="protocol" :value="protocol">
-                                        [[ protocol.toUpperCase() ]]
-                                    </a-select-option>
-                                </a-select>
                                 <a-select v-model="filters.status" aria-label="按启用状态筛选">
                                     <a-select-option value="all">全部状态</a-select-option>
                                     <a-select-option value="enabled">仅看已启用</a-select-option>
@@ -128,9 +127,9 @@
                             </div>
 
                             <div class="desktop-inbound-table">
-                                <a-table :columns="columns" :row-key="dbInbound => dbInbound.id"
+                                <a-table :columns="displayColumns" :row-key="dbInbound => dbInbound.id"
                                          :data-source="displayedInbounds" :loading="refreshing"
-                                         :scroll="{ x: 1410 }" :pagination="false"
+                                         :scroll="{ x: showStreamColumn ? 1190 : 1030 }" :pagination="false"
                                          :locale="{ emptyText: emptyStateText }">
                                     <template slot="action" slot-scope="text, dbInbound">
                                         <a-dropdown :trigger="['click']">
@@ -139,8 +138,8 @@
                                                 管理 <a-icon type="down"></a-icon>
                                             </a-button>
                                             <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
-                                                <a-menu-item v-if="dbInbound.hasLink()" key="qrcode">
-                                                    <a-icon type="qrcode"></a-icon>二维码与复制
+                                                <a-menu-item key="users">
+                                                    <a-icon type="team"></a-icon>用户与下载
                                                 </a-menu-item>
                                                 <a-menu-item key="edit">
                                                     <a-icon type="edit"></a-icon>编辑配置
@@ -154,13 +153,10 @@
                                             </a-menu>
                                         </a-dropdown>
                                     </template>
-                                    <template slot="protocol" slot-scope="text, dbInbound">
-                                        <a-tag :color="protocolColor(dbInbound.protocol)">[[ dbInbound.protocol.toUpperCase() ]]</a-tag>
-                                    </template>
                                     <template slot="traffic" slot-scope="text, dbInbound">
                                         <div class="traffic-cell">
                                             <div class="traffic-values">
-                                                <span>本周期 ↑ [[ sizeFormat(dbInbound.up) ]]</span>
+                                                <span>↑ [[ sizeFormat(dbInbound.up) ]]</span>
                                                 <span>↓ [[ sizeFormat(dbInbound.down) ]]</span>
                                             </div>
                                             <a-progress v-if="dbInbound.total > 0" :show-info="false" :stroke-width="6"
@@ -175,10 +171,11 @@
                                         <a-button type="link" @click="showInfo(dbInbound)">查看详情</a-button>
                                     </template>
                                     <template slot="stream" slot-scope="text, dbInbound">
-                                        <template v-if="inboundById[dbInbound.id] && (dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS)">
+                                        <template v-if="inboundById[dbInbound.id] && dbInbound.isVLess">
                                             <a-tag color="green">[[ streamLabel(dbInbound) ]]</a-tag>
                                             <a-tag v-if="inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
                                             <a-tag v-if="inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
+                                            <a-tag v-if="inboundById[dbInbound.id].stream.isReality" color="geekblue">Reality</a-tag>
                                         </template>
                                         <span v-else class="muted-text">无</span>
                                     </template>
@@ -195,8 +192,8 @@
                                     </template>
                                     <template slot="expiryTime" slot-scope="text, dbInbound">
                                         <template v-if="dbInbound.expiryTime > 0">
-                                            <a-tag v-if="dbInbound.isExpiry" color="red">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
-                                            <a-tag v-else color="blue">[[ DateUtil.formatMillis(dbInbound.expiryTime) ]]</a-tag>
+                                            <a-tag v-if="dbInbound.isExpiry" color="red">[[ formatExpiryDate(dbInbound.expiryTime) ]]</a-tag>
+                                            <a-tag v-else color="blue">[[ formatExpiryDate(dbInbound.expiryTime) ]]</a-tag>
                                         </template>
                                         <a-tag v-else color="green">无限期</a-tag>
                                     </template>
@@ -222,9 +219,7 @@
                                                   @change="checked => switchEnable(dbInbound, checked)"></a-switch>
                                     </div>
                                     <div class="inbound-mobile-tags">
-                                        <a-tag :color="protocolColor(dbInbound.protocol)">[[ dbInbound.protocol.toUpperCase() ]]</a-tag>
                                         <a-tag color="cyan">端口 [[ dbInbound.port ]]</a-tag>
-                                        <a-tag v-if="streamLabel(dbInbound) !== '无'" color="green">[[ streamLabel(dbInbound) ]]</a-tag>
                                         <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
                                         <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
                                         <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
@@ -233,8 +228,8 @@
                                     </div>
                                     <div class="mobile-traffic-block">
                                         <div class="traffic-values">
-                                            <span>本周期上传 [[ sizeFormat(dbInbound.up) ]]</span>
-                                            <span>本周期下载 [[ sizeFormat(dbInbound.down) ]]</span>
+                                            <span>↑ [[ sizeFormat(dbInbound.up) ]]</span>
+                                            <span>↓ [[ sizeFormat(dbInbound.down) ]]</span>
                                         </div>
                                         <a-progress v-if="dbInbound.total > 0" :show-info="false" :stroke-width="6"
                                                     :stroke-color="trafficColor(dbInbound)"
@@ -244,7 +239,7 @@
                                         </div>
                                     </div>
                                     <div class="inbound-mobile-actions">
-                                        <a-button v-if="dbInbound.hasLink()" icon="qrcode" :disabled="isPending(dbInbound.id)" @click="showQrcode(dbInbound)">分享</a-button>
+                                        <a-button icon="team" :disabled="isPending(dbInbound.id)" @click="openUsers(dbInbound)">用户</a-button>
                                         <a-button icon="edit" :disabled="isPending(dbInbound.id)" @click="openEditInbound(dbInbound)">编辑</a-button>
                                         <a-button icon="info-circle" :disabled="isPending(dbInbound.id)" @click="showInfo(dbInbound)">详情</a-button>
                                         <a-dropdown :trigger="['click']">
@@ -286,17 +281,12 @@
         width: 160,
         dataIndex: "remark",
     }, {
-        title: "协议",
-        align: 'center',
-        width: 100,
-        scopedSlots: { customRender: 'protocol' },
-    }, {
         title: "端口",
         align: 'center',
         dataIndex: "port",
         width: 90,
     }, {
-        title: "本周期流量与月度限额",
+        title: "流量与限额",
         align: 'center',
         width: 260,
         scopedSlots: { customRender: 'traffic' },
@@ -306,6 +296,7 @@
         width: 100,
         scopedSlots: { customRender: 'settings' },
     }, {
+        key: "stream",
         title: "传输配置",
         align: 'center',
         width: 160,
@@ -340,7 +331,6 @@
             inboundById: {},
             filters: {
                 query: '',
-                protocol: 'all',
                 status: 'all',
                 sort: 'id-asc',
                 quick: 'all',
@@ -349,6 +339,7 @@
             trafficResetDay: 1,
             pendingInboundIds: {},
             filtersInitialized: false,
+            showStreamColumn: false,
         },
         methods: {
             loading(spinning=true) {
@@ -395,13 +386,12 @@
             },
             resetFilters() {
                 this.filters.query = '';
-                this.filters.protocol = 'all';
                 this.filters.status = 'all';
                 this.filters.sort = 'id-asc';
                 this.filters.quick = 'all';
             },
             clearFilter(key) {
-                const defaults = {query: '', protocol: 'all', status: 'all', sort: 'id-asc', quick: 'all'};
+                const defaults = {query: '', status: 'all', sort: 'id-asc', quick: 'all'};
                 if (Object.prototype.hasOwnProperty.call(defaults, key)) {
                     this.filters[key] = defaults[key];
                 }
@@ -410,7 +400,6 @@
                 if (!this.filtersInitialized) return;
                 const params = new URLSearchParams();
                 if (this.filters.query) params.set('q', this.filters.query);
-                if (this.filters.protocol !== 'all') params.set('protocol', this.filters.protocol);
                 if (this.filters.status !== 'all') params.set('status', this.filters.status);
                 if (this.filters.sort !== 'id-asc') params.set('sort', this.filters.sort);
                 if (this.filters.quick !== 'all') params.set('quick', this.filters.quick);
@@ -429,17 +418,6 @@
                 } else if (event.key === 'Escape' && editing && target.blur) {
                     target.blur();
                 }
-            },
-            protocolColor(protocol) {
-                const colors = {
-                    vmess: 'blue',
-                    vless: 'geekblue',
-                    trojan: 'purple',
-                    shadowsocks: 'cyan',
-                    socks: 'orange',
-                    http: 'green',
-                };
-                return colors[protocol] || 'default';
             },
             trafficPercent(dbInbound) {
                 if (dbInbound.total <= 0) {
@@ -469,7 +447,7 @@
             },
             streamLabel(dbInbound) {
                 const inbound = this.inboundById[dbInbound.id];
-                if (inbound == null || !(dbInbound.isVMess || dbInbound.isVLess || dbInbound.isTrojan || dbInbound.isSS)) {
+                if (inbound == null || !dbInbound.isVLess) {
                     return '无';
                 }
                 return inbound.stream.network || 'tcp';
@@ -479,9 +457,12 @@
                     return '无限期';
                 }
                 if (dbInbound.isExpiry) {
-                    return `已于 ${DateUtil.formatMillis(dbInbound.expiryTime)} 到期`;
+                    return `已于 ${this.formatExpiryDate(dbInbound.expiryTime)} 到期`;
                 }
-                return `${DateUtil.formatMillis(dbInbound.expiryTime)} 到期`;
+                return `${this.formatExpiryDate(dbInbound.expiryTime)} 到期`;
+            },
+            formatExpiryDate(value) {
+                return moment(value).format('YYYY-MM-DD');
             },
             conditionFor(dbInbound) {
                 const now = Date.now();
@@ -542,8 +523,8 @@
                     return;
                 }
                 switch (action.key) {
-                    case "qrcode":
-                        this.showQrcode(dbInbound);
+                    case "users":
+                        this.openUsers(dbInbound);
                         break;
                     case "edit":
                         this.openEditInbound(dbInbound);
@@ -578,6 +559,15 @@
                     confirm: async (inbound, dbInbound) => {
                         await this.updateInbound(inbound, dbInbound);
                     }
+                });
+            },
+            openUsers(dbInbound) {
+                userModal.show({
+                    dbInbound,
+                    inbound: dbInbound.toInbound(),
+                    confirm: async (inbound, editableInbound) => {
+                        await this.updateInbound(inbound, editableInbound, userModal);
+                    },
                 });
             },
             inboundPayload(inbound, dbInbound) {
@@ -640,10 +630,6 @@
                     },
                 });
             },
-            showQrcode(dbInbound) {
-                const link = dbInbound.genLink();
-                qrModal.show('二维码', link);
-            },
             showInfo(dbInbound) {
                 infoModal.show(dbInbound);
             },
@@ -682,10 +668,6 @@
             if (allowedQuickFilters.includes(quick)) {
                 this.filters.quick = quick;
             }
-            const protocol = params.get('protocol');
-            if (['all', 'vmess', 'vless', 'trojan', 'shadowsocks', 'socks', 'http', 'dokodemo-door'].includes((protocol || '').toLowerCase())) {
-                this.filters.protocol = protocol.toLowerCase();
-            }
             const status = params.get('status');
             if (['all', 'enabled', 'disabled'].includes(status)) this.filters.status = status;
             const sort = params.get('sort');
@@ -704,12 +686,12 @@
             enabledCount() {
                 return this.dbInbounds.filter(inbound => inbound.enable).length;
             },
-            protocolOptions() {
-                return Array.from(new Set(this.dbInbounds.map(inbound => inbound.protocol))).sort();
+            displayColumns() {
+                return this.showStreamColumn ? columns : columns.filter(column => column.key !== 'stream');
             },
             hasActiveFilters() {
-                return this.filters.query !== '' || this.filters.protocol !== 'all' ||
-                    this.filters.status !== 'all' || this.filters.sort !== 'id-asc' || this.filters.quick !== 'all';
+                return this.filters.query !== '' || this.filters.status !== 'all' ||
+                    this.filters.sort !== 'id-asc' || this.filters.quick !== 'all';
             },
             activeFilterLabels() {
                 const labels = [];
@@ -718,7 +700,6 @@
                     const quickLabels = {attention: '需要关注', expired: '已到期', expiring: '7 天内到期', 'high-usage': '流量紧张', exhausted: '流量耗尽', disabled: '已停用'};
                     labels.push({key: 'quick', label: quickLabels[this.filters.quick]});
                 }
-                if (this.filters.protocol !== 'all') labels.push({key: 'protocol', label: `协议：${this.filters.protocol.toUpperCase()}`});
                 if (this.filters.status !== 'all') labels.push({key: 'status', label: this.filters.status === 'enabled' ? '仅看已启用' : '仅看已停用'});
                 if (this.filters.sort !== 'id-asc') labels.push({key: 'sort', label: '已调整排序'});
                 return labels;
@@ -742,9 +723,6 @@
                     if (!this.matchesQuickFilter(inbound)) {
                         return false;
                     }
-                    if (this.filters.protocol !== 'all' && inbound.protocol !== this.filters.protocol) {
-                        return false;
-                    }
                     if (this.filters.status === 'enabled' && !inbound.enable) {
                         return false;
                     }
@@ -752,7 +730,7 @@
                         return false;
                     }
                     if (query !== '') {
-                        const searchable = [inbound.id, inbound.remark, inbound.protocol, inbound.port, inbound.listen, inbound.tag]
+                        const searchable = [inbound.id, inbound.remark, inbound.port, inbound.listen, inbound.tag]
                             .join(' ').toLowerCase();
                         if (!searchable.includes(query)) {
                             return false;
@@ -806,8 +784,8 @@
 
 </script>
 {{template "inboundModal"}}
+{{template "inboundUsersModal"}}
 {{template "promptModal"}}
-{{template "qrcodeModal"}}
 {{template "textModal"}}
 {{template "inboundInfoModal"}}
 </body>

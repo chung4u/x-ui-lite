@@ -495,6 +495,7 @@ class StreamSettings extends XrayCommonClass {
                 httpSettings=new HttpStreamSettings(),
                 quicSettings=new QuicStreamSettings(),
                 grpcSettings=new GrpcStreamSettings(),
+                realitySettings=null,
                 ) {
         super();
         this.network = network;
@@ -506,6 +507,7 @@ class StreamSettings extends XrayCommonClass {
         this.http = httpSettings;
         this.quic = quicSettings;
         this.grpc = grpcSettings;
+        this.reality = realitySettings;
     }
 
     get isTls() {
@@ -522,6 +524,10 @@ class StreamSettings extends XrayCommonClass {
 
     get isXTls() {
         return this.security === "xtls";
+    }
+
+    get isReality() {
+        return this.security === 'reality';
     }
 
     set isXTls(isXTls) {
@@ -549,6 +555,7 @@ class StreamSettings extends XrayCommonClass {
             HttpStreamSettings.fromJson(json.httpSettings),
             QuicStreamSettings.fromJson(json.quicSettings),
             GrpcStreamSettings.fromJson(json.grpcSettings),
+            ObjectUtil.clone(json.realitySettings || null),
         );
     }
 
@@ -565,6 +572,7 @@ class StreamSettings extends XrayCommonClass {
             httpSettings: network === 'http' ? this.http.toJson() : undefined,
             quicSettings: network === 'quic' ? this.quic.toJson() : undefined,
             grpcSettings: network === 'grpc' ? this.grpc.toJson() : undefined,
+            realitySettings: this.isReality ? ObjectUtil.clone(this.reality || {}) : undefined,
         };
     }
 }
@@ -593,7 +601,7 @@ class Sniffing extends XrayCommonClass {
 class Inbound extends XrayCommonClass {
     constructor(port=RandomUtil.randomIntRange(10000, 60000),
                 listen='',
-                protocol=Protocols.VMESS,
+                protocol=Protocols.VLESS,
                 settings=null,
                 streamSettings=new StreamSettings(),
                 tag='',
@@ -872,8 +880,8 @@ class Inbound extends XrayCommonClass {
     reset() {
         this.port = RandomUtil.randomIntRange(10000, 60000);
         this.listen = '';
-        this.protocol = Protocols.VMESS;
-        this.settings = Inbound.Settings.getSettings(Protocols.VMESS);
+        this.protocol = Protocols.VLESS;
+        this.settings = Inbound.Settings.getSettings(Protocols.VLESS);
         this.stream = new StreamSettings();
         this.tag = '';
         this.sniffing = new Sniffing();
@@ -1184,6 +1192,23 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
         this.fallbacks.push(new Inbound.VLESSSettings.Fallback());
     }
 
+    addVless(vless = null) {
+        if (vless == null) {
+            const firstUser = this.vlesses[0];
+            vless = new Inbound.VLESSSettings.VLESS(
+                undefined,
+                firstUser ? firstUser.flow : '',
+            );
+        }
+        this.vlesses.push(vless);
+    }
+
+    delVless(index) {
+        if (this.vlesses.length > 1) {
+            this.vlesses.splice(index, 1);
+        }
+    }
+
     delFallback(index) {
         this.fallbacks.splice(index, 1);
     }
@@ -1207,16 +1232,18 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
 };
 Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
 
-    constructor(id=RandomUtil.randomUUID(), flow=FLOW_CONTROL.DIRECT) {
+    constructor(id=RandomUtil.randomUUID(), flow='', email='') {
         super();
         this.id = id;
         this.flow = flow;
+        this.email = email;
     }
 
     static fromJson(json={}) {
         return new Inbound.VLESSSettings.VLESS(
             json.id,
             json.flow,
+            json.email,
         );
     }
 };

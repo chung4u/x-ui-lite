@@ -105,7 +105,7 @@ class DBInbound {
         if (t == null) {
             this.expiryTime = 0;
         } else {
-            this.expiryTime = t.valueOf();
+            this.expiryTime = t.clone().endOf('day').valueOf();
         }
     }
 
@@ -141,20 +141,17 @@ class DBInbound {
     }
 
     hasLink() {
-        switch (this.protocol) {
-            case Protocols.VMESS:
-            case Protocols.VLESS:
-            case Protocols.TROJAN:
-            case Protocols.SHADOWSOCKS:
-                return true;
-            default:
-                return false;
-        }
+        return this.protocol === Protocols.VLESS;
     }
 
     genLink() {
         const inbound = this.toInbound();
         return inbound.genLink(this.address, this.remark);
+    }
+
+    userDisplayName(user, index=0) {
+        const name = String((user && user.email) || '').trim();
+        return name || `用户 ${index + 1}`;
     }
 }
 
