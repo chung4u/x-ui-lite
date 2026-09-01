@@ -103,19 +103,39 @@ before_show_menu() {
     show_menu
 }
 
-install() {
-    bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh)
-    if [[ $? == 0 ]]; then
-        if [[ $# == 0 ]]; then
-            start
-        else
-            start 0
-        fi
+run_private_installer() {
+    local installer="/usr/local/x-ui/install-private.sh"
+    local supplied_token=0
+
+    if [[ ! -x "$installer" ]]; then
+        LOGE "未找到私有版安装器：${installer}"
+        LOGE "请按私有仓库 README 的“服务器远程一键安装”说明执行。"
+        return 1
     fi
+
+    if [[ -z "${XUI_GITHUB_TOKEN:-}" && -z "${GH_TOKEN:-}" ]]; then
+        read -rsp "请输入仅有仓库只读权限的 GitHub Token: " XUI_GITHUB_TOKEN
+        echo
+        if [[ -z "$XUI_GITHUB_TOKEN" ]]; then
+            LOGE "未输入 Token，已取消。"
+            return 1
+        fi
+        export XUI_GITHUB_TOKEN
+        supplied_token=1
+    fi
+
+    bash "$installer"
+    local result=$?
+    [[ $supplied_token == 1 ]] && unset XUI_GITHUB_TOKEN
+    return $result
+}
+
+install() {
+    run_private_installer
 }
 
 update() {
-    confirm "本功能会强制重装当前最新版，数据不会丢失，是否继续?" "n"
+    confirm "将从私有仓库构建并更新面板，现有面板数据会保留。是否继续?" "n"
     if [[ $? != 0 ]]; then
         LOGE "已取消"
         if [[ $# == 0 ]]; then
@@ -123,10 +143,8 @@ update() {
         fi
         return 0
     fi
-    bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh)
-    if [[ $? == 0 ]]; then
-        LOGI "更新完成，已自动重启面板 "
-        exit 0
+    if run_private_installer; then
+        LOGI "更新完成，面板已重启。"
     fi
 }
 

@@ -25,5 +25,24 @@
 
 - 本私有版本的网页管理界面仅支持 VLESS；已有非 VLESS 入站不会在此管理流程中创建或编辑。
 - 为避免影响既有节点，Reality 等现有传输配置在用户管理流程中保持原样；无需要时不建议修改。
-- 上游仓库的“一键安装/更新”脚本会拉取上游版本，**不适用于部署或更新本私有维护版**。本版本请从本仓库构建并按内部发布流程部署。
+- 上游仓库的“一键安装/更新”脚本会拉取上游版本，**不适用于部署或更新本私有维护版**。
 - 完整变更见 [CHANGELOG.md](./CHANGELOG.md)。
+
+## 服务器远程一键安装
+
+私有仓库不能使用公开的 `curl | bash` 地址匿名下载。请为 `chung4u/x-ui-roylive` 创建仅有 **Contents: Read-only** 权限的 GitHub Fine-grained Token；不要使用拥有仓库写入权限的 Token。
+
+在目标服务器以 root 身份执行（首次会准备隔离的 Go 编译器，并在服务器上构建当前 `main`）：
+
+```bash
+read -rsp 'GitHub Token: ' XUI_GITHUB_TOKEN; export XUI_GITHUB_TOKEN; echo
+curl -fsSL -H "Authorization: Bearer ${XUI_GITHUB_TOKEN}" \
+  https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install-private.sh | bash
+unset XUI_GITHUB_TOKEN
+```
+
+- 安装过程保留 `/etc/x-ui/x-ui.db`，不会重置面板账号、入站或流量数据。
+- 运行文件会备份到 `/usr/local/x-ui/backups/<时间>/`，然后重启 `x-ui` 服务；不会修改服务器网络或 VPN。
+- 如需先上传文件、暂不重启服务，请先执行 `export XUI_NO_RESTART=1`；安装结束后手动运行 `systemctl restart x-ui`。
+- 默认安装 `main`。若需固定某个提交或标签，请设置 `XUI_REF=<提交 SHA 或标签>` 后再执行。
+- 安装完成后，`x-ui install` 与 `x-ui update` 会调用同一私有安装器，并在需要时要求输入只读 Token；不会再拉取上游版本。
