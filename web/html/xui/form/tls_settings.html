@@ -1,11 +1,11 @@
 {{define "form/tlsSettings"}}
 <!-- tls enable -->
 <a-form layout="inline" v-if="inbound.canSetTls()">
-    <a-form-item label="tls">
+    <a-form-item label="TLS">
         <a-switch v-model="inbound.tls">
         </a-switch>
     </a-form-item>
-    <a-form-item v-if="inbound.canEnableXTls()" label="xtls">
+    <a-form-item v-if="inbound.canEnableXTls()" label="XTLS Vision">
         <a-switch v-model="inbound.xtls"></a-switch>
     </a-form-item>
 </a-form>
@@ -13,6 +13,9 @@
 <!-- tls settings -->
 <a-form v-if="inbound.tls || inbound.xtls"
         layout="inline">
+    <a-alert v-if="inbound.xtls" type="info" show-icon
+             message="XTLS Vision 已启用"
+             description="请配置域名和有效证书；VLESS 用户默认使用 xtls-rprx-vision 流控。"></a-alert>
     <a-form-item label="域名">
         <a-input v-model.trim="inbound.stream.tls.server"></a-input>
     </a-form-item>
