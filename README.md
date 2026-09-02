@@ -30,7 +30,7 @@
 
 ## 一键安装
 
-在目标服务器以 root 身份执行（首次会准备隔离的 Go 编译器，并在服务器上构建当前 `main`）：
+在目标服务器以 root 身份执行（自动识别 amd64/arm64，下载已编译 Release，无需安装 Go）：
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)
@@ -40,6 +40,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/sc
 - 首次安装会自动生成随机访问端口、账号和密码，并在安装结束时输出完整访问地址；请保存该信息并放行对应 TCP 端口。
 - 运行文件会备份到 `/usr/local/x-ui/backups/<时间>/`，然后重启 `x-ui` 服务；不会修改服务器网络或 VPN。
 - 如需先上传文件、暂不重启服务，请先执行 `export XUI_NO_RESTART=1`；安装结束后手动运行 `systemctl restart x-ui`。
-- 默认安装 `main`。若需固定某个提交或标签，请设置 `XUI_REF=<提交 SHA 或标签>` 后再执行。
 - 安装完成后，`x-ui install` 与 `x-ui update` 会调用同一项目安装器；不会再拉取上游版本。
-- 公开仓库无需 Token。若遇到 GitHub API 访问频率限制，可选择设置仅有只读权限的 `XUI_GITHUB_TOKEN` 后再安装。
+- 默认安装最新 Release。若需固定版本，请设置 `XUI_VERSION=<发布标签>` 后再执行。
+- GitHub Actions 会在推送 `v*` 标签时自动构建 Linux amd64/arm64 安装包并生成 Release。

@@ -1,0 +1,59 @@
+name: Build release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Linux ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+      - name: Build package
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p package/bin
+          CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -trimpath -o package/x-ui .
+          cp "bin/xray-linux-${TARGET_ARCH}" package/bin/
+          cp bin/geoip.dat bin/geosite.dat package/bin/
+          cp x-ui.service x-ui.sh scripts/install.sh package/
+          tar -czf "x-ui-linux-${TARGET_ARCH}.tar.gz" -C package .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: x-ui-linux-${{ matrix.arch }}.tar.gz
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG_NAME" release-assets/x-ui-linux-*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "X-UI RoyLive $TAG_NAME" \
+            --generate-notes
