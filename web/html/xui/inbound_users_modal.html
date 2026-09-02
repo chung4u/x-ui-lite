@@ -6,7 +6,9 @@
             <strong>[[ userModal.dbInbound.remark || '未命名入站' ]]</strong>
             <span>端口 [[ userModal.dbInbound.port ]] · VLESS</span>
         </div>
-        <a-button type="primary" size="small" icon="user-add" @click="userModal.addUser">新增用户</a-button>
+        <a-button class="inbound-users-add-btn" type="primary" @click="userModal.addUser">
+            <a-icon type="user-add"></a-icon><span>新增用户</span>
+        </a-button>
     </div>
     <a-alert class="inbound-users-notice" type="info" show-icon
              message="每位用户拥有独立 UUID"

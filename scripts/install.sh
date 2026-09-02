@@ -35,7 +35,16 @@ case "$(uname -m)" in
 esac
 
 require_command() { command -v "$1" >/dev/null 2>&1 || fail "缺少命令：$1"; }
-random_hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d '[:space:]'; }
+random_path_segment() {
+    local chars='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    local value='' byte index
+    while [[ ${#value} -lt 5 ]]; do
+        byte="$(od -An -N1 -tu1 /dev/urandom | tr -d '[:space:]')"
+        index=$((byte % 36))
+        value+="${chars:index:1}"
+    done
+    printf '%s' "$value"
+}
 
 choose_panel_port() {
     local attempt=0 hex candidate
@@ -101,7 +110,7 @@ if [[ "$FIRST_INSTALL" == "1" ]]; then
     PANEL_USERNAME="${XUI_USERNAME:-admin}"
     PANEL_PASSWORD="${XUI_PASSWORD:-admin}"
     PANEL_PORT="$(choose_panel_port)"
-    PANEL_BASE_PATH="/${XUI_BASE_PATH:-$(random_hex 8)}/"
+    PANEL_BASE_PATH="/${XUI_BASE_PATH:-$(random_path_segment)}/"
     ACCESS_HOST="$(resolve_access_host)"
     [[ -n "$ACCESS_HOST" ]] || ACCESS_HOST="<服务器公网 IP>"
     info "初始化首次安装的访问凭据"

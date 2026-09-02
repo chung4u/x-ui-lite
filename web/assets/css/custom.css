@@ -928,6 +928,27 @@ textarea {
     margin-bottom: 16px;
 }
 
+.inbound-users-add-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 112px;
+    height: 40px;
+    padding: 0 16px;
+    line-height: 1 !important;
+    white-space: nowrap;
+}
+
+.inbound-users-add-btn .anticon {
+    margin-right: 0 !important;
+    line-height: 1;
+}
+
+.inbound-users-add-btn > span:last-child {
+    line-height: 1;
+}
+
 .inbound-users-modal-head strong {
     display: block;
     color: #253553;
