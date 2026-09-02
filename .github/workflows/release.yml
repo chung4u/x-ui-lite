@@ -33,7 +33,22 @@ jobs:
             export CC=aarch64-linux-gnu-gcc
           fi
           CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -trimpath -o package/x-ui .
-          cp "bin/xray-linux-${TARGET_ARCH}" package/bin/
+          case "$TARGET_ARCH" in
+            amd64)
+              XRAY_ASSET="Xray-linux-64.zip"
+              XRAY_SHA256="b3e5902d06d6282fe53cfa2fc426058b9aeaa429b2c812e20887cd47f26d08bf"
+              ;;
+            arm64)
+              XRAY_ASSET="Xray-linux-arm64-v8a.zip"
+              XRAY_SHA256="13a251379bea366c2cf10363ad71e75734193d401f26f518bf0c25e5c8f8c931"
+              ;;
+          esac
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/XTLS/Xray-core/releases/download/v26.6.27/${XRAY_ASSET}" \
+            -o "/tmp/${XRAY_ASSET}"
+          echo "${XRAY_SHA256}  /tmp/${XRAY_ASSET}" | sha256sum --check --status
+          unzip -p "/tmp/${XRAY_ASSET}" xray > "package/bin/xray-linux-${TARGET_ARCH}"
+          chmod 0755 "package/bin/xray-linux-${TARGET_ARCH}"
           cp bin/geoip.dat bin/geosite.dat package/bin/
           cp x-ui.service x-ui.sh scripts/install.sh package/
           tar -czf "x-ui-linux-${TARGET_ARCH}.tar.gz" -C package .

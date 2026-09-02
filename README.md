@@ -13,6 +13,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-lite/main/scrip
 ```
 
 - 自动识别 amd64 / arm64 并下载预编译版本，无需安装 Go。
+- 内置 Xray 核心 `26.6.27`，首次安装默认使用该版本。
 - 首次安装：端口 `54321`，账号 `admin`，密码 `admin`；终端会显示完整访问地址（含 5 位随机路径），并自动放行本机 UFW / firewalld 的 TCP `54321`。
 - 更新安装会保留面板数据并备份原运行文件；完成后会再次显示当前控制面板访问地址。
 

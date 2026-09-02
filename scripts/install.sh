@@ -9,6 +9,7 @@ VERSION="${XUI_VERSION:-latest}"
 INSTALL_DIR="${XUI_INSTALL_DIR:-/usr/local/x-ui}"
 DATA_DIR="${XUI_DATA_DIR:-/etc/x-ui}"
 SERVICE_NAME="${XUI_SERVICE_NAME:-x-ui}"
+XRAY_CORE_VERSION="26.6.27"
 TOKEN="${XUI_GITHUB_TOKEN:-${GH_TOKEN:-}}"
 WORK_DIR=""
 AUTH_HEADERS=()
@@ -182,6 +183,7 @@ if [[ -d "$INSTALL_DIR" ]]; then
 fi
 
 info "安装程序文件；面板数据保留在 ${DATA_DIR}"
+info "使用内置 Xray 核心 ${XRAY_CORE_VERSION}"
 mkdir -p "$INSTALL_DIR/bin" "$DATA_DIR"
 install -m 0755 "$WORK_DIR/x-ui" "$INSTALL_DIR/x-ui"
 install -m 0755 "$WORK_DIR/bin/xray-linux-${ARCH}" "$INSTALL_DIR/bin/xray-linux-${ARCH}"
