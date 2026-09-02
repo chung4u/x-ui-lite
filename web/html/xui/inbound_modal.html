@@ -100,11 +100,6 @@
                 this.inbound = Inbound.fromJson(inbound.toJson());
             } else {
                 this.inbound = new Inbound();
-                // 新建 VLESS 入站默认使用 XTLS Vision；编辑已有入站时保留原有配置。
-                this.inbound.xtls = true;
-                this.inbound.settings.vlesses.forEach(user => {
-                    user.flow = FLOW_CONTROL.VISION;
-                });
             }
             if (dbInbound) {
                 this.dbInbound = new DBInbound(dbInbound);

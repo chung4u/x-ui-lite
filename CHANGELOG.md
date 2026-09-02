@@ -2,9 +2,6 @@
 
 ## v1.0.0 · 2026-09-02 · X-UI Lite 正式版
 
-- 入站默认启用 XTLS Vision，VLESS 用户默认使用 `xtls-rprx-vision`；编辑已有入站时保留其原始 TLS/XTLS 配置。
-- 恢复 XTLS 配置入口与流控选项，支持 `xtls-rprx-origin`、`xtls-rprx-direct` 和 `xtls-rprx-vision`。
-
 - 重构“用户与下载”中的新增用户按钮：使用独立的图标与文字样式，提升对比度、居中对齐和点击识别度。
 
 ### 产品与界面
