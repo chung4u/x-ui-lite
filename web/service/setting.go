@@ -255,6 +255,20 @@ func (s *SettingService) GetBasePath() (string, error) {
 	return basePath, nil
 }
 
+func (s *SettingService) SetBasePath(basePath string) error {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" {
+		return common.NewErrorf("base path cannot be empty")
+	}
+	if !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+	return s.setString("webBasePath", basePath)
+}
+
 func (s *SettingService) GetTimeLocation() (*time.Location, error) {
 	l, err := s.getString("timeLocation")
 	if err != nil {

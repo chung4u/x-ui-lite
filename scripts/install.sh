@@ -17,6 +17,7 @@ PANEL_USERNAME=""
 PANEL_PASSWORD=""
 PANEL_PORT=""
 ACCESS_HOST=""
+PANEL_BASE_PATH=""
 
 info() { printf '\033[1;34m[信息]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[完成]\033[0m %s\n' "$*"; }
@@ -60,7 +61,7 @@ resolve_access_host() {
 
 show_first_install_access() {
     printf '\n\033[1;32m========================================\n          X-UI 首次安装完成\n========================================\033[0m\n'
-    printf '访问地址：\033[1;36mhttp://%s:%s/\033[0m\n用户名：  \033[1;36m%s\033[0m\n密码：    \033[1;36m%s\033[0m\n' "$ACCESS_HOST" "$PANEL_PORT" "$PANEL_USERNAME" "$PANEL_PASSWORD"
+    printf '访问地址：\033[1;36mhttp://%s:%s%s\033[0m\n用户名：  \033[1;36m%s\033[0m\n密码：    \033[1;36m%s\033[0m\n' "$ACCESS_HOST" "$PANEL_PORT" "$PANEL_BASE_PATH" "$PANEL_USERNAME" "$PANEL_PASSWORD"
     printf '\n请确认防火墙已放行 TCP %s，并在首次登录后妥善保存或更新凭据。\n' "$PANEL_PORT"
 }
 
@@ -107,11 +108,13 @@ if [[ "$FIRST_INSTALL" == "1" ]]; then
     PANEL_USERNAME="${XUI_USERNAME:-xui-$(random_hex 4)}"
     PANEL_PASSWORD="${XUI_PASSWORD:-$(random_hex 16)}"
     PANEL_PORT="$(choose_panel_port)"
+    PANEL_BASE_PATH="/${XUI_BASE_PATH:-$(random_hex 8)}/"
     ACCESS_HOST="$(resolve_access_host)"
     [[ -n "$ACCESS_HOST" ]] || ACCESS_HOST="<服务器公网 IP>"
     info "初始化首次安装的访问凭据"
     "$INSTALL_DIR/x-ui" setting -username "$PANEL_USERNAME" -password "$PANEL_PASSWORD"
     "$INSTALL_DIR/x-ui" setting -port "$PANEL_PORT"
+    "$INSTALL_DIR/x-ui" setting -base-path "$PANEL_BASE_PATH"
 fi
 
 systemctl daemon-reload

@@ -90,7 +90,7 @@ func resetSetting() {
 	}
 }
 
-func updateSetting(port int, username string, password string) {
+func updateSetting(port int, username string, password string, basePath string) {
 	err := database.InitDB(config.GetDBPath())
 	if err != nil {
 		fmt.Println(err)
@@ -116,6 +116,14 @@ func updateSetting(port int, username string, password string) {
 			fmt.Println("set username and password success")
 		}
 	}
+	if basePath != "" {
+		err := settingService.SetBasePath(basePath)
+		if err != nil {
+			fmt.Println("set base path failed:", err)
+		} else {
+			fmt.Printf("set base path %v success", basePath)
+		}
+	}
 }
 
 func main() {
@@ -137,11 +145,13 @@ func main() {
 	var port int
 	var username string
 	var password string
+	var basePath string
 	var reset bool
 	settingCmd.BoolVar(&reset, "reset", false, "reset all setting")
 	settingCmd.IntVar(&port, "port", 0, "set panel port")
 	settingCmd.StringVar(&username, "username", "", "set login username")
 	settingCmd.StringVar(&password, "password", "", "set login password")
+	settingCmd.StringVar(&basePath, "base-path", "", "set panel base path")
 
 	oldUsage := flag.Usage
 	flag.Usage = func() {
@@ -186,7 +196,7 @@ func main() {
 		if reset {
 			resetSetting()
 		} else {
-			updateSetting(port, username, password)
+			updateSetting(port, username, password, basePath)
 		}
 	default:
 		fmt.Println("except 'run' or 'v2-ui' or 'setting' subcommands")
