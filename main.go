@@ -126,6 +126,34 @@ func updateSetting(port int, username string, password string, basePath string) 
 	}
 }
 
+func printPanelAccess() {
+	err := database.InitDB(config.GetDBPath())
+	if err != nil {
+		fmt.Println("读取面板访问配置失败:", err)
+		return
+	}
+
+	settingService := service.SettingService{}
+	port, err := settingService.GetPort()
+	if err != nil {
+		fmt.Println("读取面板端口失败:", err)
+		return
+	}
+	basePath, err := settingService.GetBasePath()
+	if err != nil {
+		fmt.Println("读取面板访问路径失败:", err)
+		return
+	}
+	certFile, certErr := settingService.GetCertFile()
+	keyFile, keyErr := settingService.GetKeyFile()
+	protocol := "http"
+	if certErr == nil && keyErr == nil && certFile != "" && keyFile != "" {
+		protocol = "https"
+	}
+
+	fmt.Printf("PANEL_PROTOCOL=%s\nPANEL_PORT=%d\nPANEL_BASE_PATH=%s\n", protocol, port, basePath)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		runWebServer()
@@ -147,11 +175,13 @@ func main() {
 	var password string
 	var basePath string
 	var reset bool
+	var showPanelAccess bool
 	settingCmd.BoolVar(&reset, "reset", false, "reset all setting")
 	settingCmd.IntVar(&port, "port", 0, "set panel port")
 	settingCmd.StringVar(&username, "username", "", "set login username")
 	settingCmd.StringVar(&password, "password", "", "set login password")
 	settingCmd.StringVar(&basePath, "base-path", "", "set panel base path")
+	settingCmd.BoolVar(&showPanelAccess, "show-panel-access", false, "show panel access settings")
 
 	oldUsage := flag.Usage
 	flag.Usage = func() {
@@ -195,6 +225,8 @@ func main() {
 		}
 		if reset {
 			resetSetting()
+		} else if showPanelAccess {
+			printPanelAccess()
 		} else {
 			updateSetting(port, username, password, basePath)
 		}

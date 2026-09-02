@@ -14,7 +14,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/sc
 
 - 自动识别 amd64 / arm64 并下载预编译版本，无需安装 Go。
 - 首次安装：端口 `54321`，账号 `admin`，密码 `admin`；终端会显示完整访问地址（含 5 位随机路径），并自动放行本机 UFW / firewalld 的 TCP `54321`。
-- 更新安装会保留面板数据并备份原运行文件；完成后自动重启 `x-ui` 服务。
+- 更新安装会保留面板数据并备份原运行文件；完成后会再次显示当前控制面板访问地址。
 
 云厂商防火墙需在控制台单独放行端口。安装完成后可执行 `x-ui update` 更新。若需固定版本：`XUI_VERSION=v1.0.1 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)`。
 

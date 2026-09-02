@@ -932,12 +932,23 @@ textarea {
     display: inline-flex !important;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    min-width: 112px;
-    height: 40px;
-    padding: 0 16px;
+    gap: 7px;
+    min-width: 104px;
+    min-height: 36px;
+    height: 36px;
+    padding: 0 14px;
+    border-color: #cbd9ff;
+    background: #f5f8ff;
+    color: var(--xui-primary);
     line-height: 1 !important;
     white-space: nowrap;
+}
+
+.inbound-users-add-btn:hover,
+.inbound-users-add-btn:focus {
+    border-color: var(--xui-primary);
+    background: #edf3ff;
+    color: var(--xui-primary-dark);
 }
 
 .inbound-users-add-btn .anticon {
@@ -946,6 +957,11 @@ textarea {
 }
 
 .inbound-users-add-btn > span:last-child {
+    display: inline;
+    margin-top: 0;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 650;
     line-height: 1;
 }
 
@@ -955,7 +971,7 @@ textarea {
     font-size: 16px;
 }
 
-.inbound-users-modal-head span {
+.inbound-users-modal-head > div > span {
     display: block;
     margin-top: 3px;
     color: #91a0b8;

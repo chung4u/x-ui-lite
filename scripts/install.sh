@@ -18,7 +18,9 @@ PANEL_PASSWORD=""
 PANEL_PORT=""
 ACCESS_HOST=""
 PANEL_BASE_PATH=""
+PANEL_PROTOCOL="http"
 FIREWALL_RESULT="未执行防火墙处理。"
+RESTART_FAILED=0
 
 info() { printf '\033[1;34m[信息]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[完成]\033[0m %s\n' "$*"; }
@@ -119,11 +121,36 @@ open_panel_firewall() {
     FIREWALL_RESULT="未检测到需要放行的本机防火墙策略。"
 }
 
-show_first_install_access() {
-    printf '\n\033[1;32m========================================\n          X-UI 首次安装完成\n========================================\033[0m\n'
-    printf '访问地址：\033[1;36mhttp://%s:%s%s\033[0m\n用户名：  \033[1;36m%s\033[0m\n密码：    \033[1;36m%s\033[0m\n' "$ACCESS_HOST" "$PANEL_PORT" "$PANEL_BASE_PATH" "$PANEL_USERNAME" "$PANEL_PASSWORD"
-    printf '\n防火墙处理：%s\n' "$FIREWALL_RESULT"
-    printf '云厂商防火墙策略无法由脚本修改；如已启用，请同时放行 TCP %s。首次登录后请立即修改密码。\n' "$PANEL_PORT"
+read_panel_access() {
+    local access_info key value
+    access_info="$("$INSTALL_DIR/x-ui" setting -show-panel-access)" || return 1
+    PANEL_PROTOCOL=""
+    PANEL_PORT=""
+    PANEL_BASE_PATH=""
+    while IFS='=' read -r key value; do
+        case "$key" in
+            PANEL_PROTOCOL) PANEL_PROTOCOL="$value" ;;
+            PANEL_PORT) PANEL_PORT="$value" ;;
+            PANEL_BASE_PATH) PANEL_BASE_PATH="$value" ;;
+        esac
+    done <<< "$access_info"
+    [[ "$PANEL_PROTOCOL" == "http" || "$PANEL_PROTOCOL" == "https" ]] || return 1
+    [[ "$PANEL_PORT" =~ ^[0-9]+$ && "$PANEL_PORT" -ge 1 && "$PANEL_PORT" -le 65535 ]] || return 1
+    [[ "$PANEL_BASE_PATH" == /* && "$PANEL_BASE_PATH" == */ ]] || return 1
+}
+
+show_install_access() {
+    local install_title="X-UI 更新完成"
+    if [[ "$FIRST_INSTALL" == "1" ]]; then
+        install_title="X-UI 首次安装完成"
+    fi
+    printf '\n\033[1;32m========================================\n          %s\n========================================\033[0m\n' "$install_title"
+    printf '访问地址：\033[1;36m%s://%s:%s%s\033[0m\n' "$PANEL_PROTOCOL" "$ACCESS_HOST" "$PANEL_PORT" "$PANEL_BASE_PATH"
+    if [[ "$FIRST_INSTALL" == "1" ]]; then
+        printf '用户名：  \033[1;36m%s\033[0m\n密码：    \033[1;36m%s\033[0m\n' "$PANEL_USERNAME" "$PANEL_PASSWORD"
+        printf '\n防火墙处理：%s\n' "$FIREWALL_RESULT"
+        printf '云厂商防火墙策略无法由脚本修改；如已启用，请同时放行 TCP %s。首次登录后请立即修改密码。\n' "$PANEL_PORT"
+    fi
 }
 
 require_command curl
@@ -170,8 +197,6 @@ if [[ "$FIRST_INSTALL" == "1" ]]; then
     PANEL_PASSWORD="${XUI_PASSWORD:-admin}"
     PANEL_PORT="$(choose_panel_port)"
     PANEL_BASE_PATH="/${XUI_BASE_PATH:-$(random_path_segment)}/"
-    ACCESS_HOST="$(resolve_access_host)"
-    [[ -n "$ACCESS_HOST" ]] || ACCESS_HOST="<服务器公网 IP>"
     info "初始化首次安装的访问凭据"
     "$INSTALL_DIR/x-ui" setting -username "$PANEL_USERNAME" -password "$PANEL_PASSWORD"
     "$INSTALL_DIR/x-ui" setting -port "$PANEL_PORT"
@@ -185,8 +210,18 @@ if [[ "${XUI_NO_RESTART:-0}" == "1" ]]; then
     success "文件已安装。请确认后手动执行：systemctl restart ${SERVICE_NAME}"
 else
     info "重启面板服务（不会修改服务器网络、VPN 或面板数据库）"
-    systemctl restart "$SERVICE_NAME"
-    systemctl --no-pager --full status "$SERVICE_NAME"
-    success "安装完成。数据目录保持为 ${DATA_DIR}。"
+    if systemctl restart "$SERVICE_NAME"; then
+        systemctl --no-pager --full status "$SERVICE_NAME" || warning "无法读取服务状态，请执行 systemctl status ${SERVICE_NAME} 检查。"
+        success "安装完成。数据目录保持为 ${DATA_DIR}。"
+    else
+        RESTART_FAILED=1
+        warning "面板服务重启失败，访问地址仍已输出；请执行 systemctl status ${SERVICE_NAME} 排查。"
+    fi
 fi
-[[ "$FIRST_INSTALL" == "1" ]] && show_first_install_access
+ACCESS_HOST="$(resolve_access_host)"
+[[ -n "$ACCESS_HOST" ]] || ACCESS_HOST="<服务器公网 IP>"
+if ! read_panel_access; then
+    fail "无法读取当前面板访问配置；请检查 ${DATA_DIR}/x-ui.db。"
+fi
+show_install_access
+[[ "$RESTART_FAILED" == "0" ]] || exit 1
