@@ -7,7 +7,8 @@
             <span>端口 [[ userModal.dbInbound.port ]] · VLESS</span>
         </div>
         <a-button class="inbound-users-add-btn" @click="userModal.addUser">
-            <a-icon type="user-add"></a-icon><span>新增用户</span>
+            <span class="inbound-users-add-icon"><a-icon type="user-add"></a-icon></span>
+            <span class="inbound-users-add-label">新增用户</span>
         </a-button>
     </div>
     <a-alert class="inbound-users-notice" type="info" show-icon

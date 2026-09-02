@@ -932,14 +932,15 @@ textarea {
     display: inline-flex !important;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    min-width: 104px;
-    min-height: 36px;
-    height: 36px;
-    padding: 0 14px;
-    border-color: #cbd9ff;
-    background: #f5f8ff;
-    color: var(--xui-primary);
+    flex: 0 0 auto;
+    gap: 8px;
+    min-width: 116px;
+    min-height: 38px;
+    height: 38px;
+    padding: 0 16px;
+    border-color: #9cb9ff;
+    background: #ffffff;
+    box-shadow: 0 5px 14px rgba(79, 124, 255, .10);
     line-height: 1 !important;
     white-space: nowrap;
 }
@@ -947,22 +948,28 @@ textarea {
 .inbound-users-add-btn:hover,
 .inbound-users-add-btn:focus {
     border-color: var(--xui-primary);
-    background: #edf3ff;
-    color: var(--xui-primary-dark);
+    background: #eef3ff;
+    box-shadow: 0 7px 16px rgba(79, 124, 255, .16);
 }
 
-.inbound-users-add-btn .anticon {
+.inbound-users-add-icon,
+.inbound-users-add-label {
+    display: inline-flex !important;
+    align-items: center;
+    margin-top: 0 !important;
+    color: #3972f2 !important;
+    line-height: 1 !important;
+}
+
+.inbound-users-add-icon .anticon {
     margin-right: 0 !important;
+    font-size: 15px;
     line-height: 1;
 }
 
-.inbound-users-add-btn > span:last-child {
-    display: inline;
-    margin-top: 0;
-    color: inherit;
-    font-size: 13px;
+.inbound-users-add-label {
+    font-size: 14px !important;
     font-weight: 650;
-    line-height: 1;
 }
 
 .inbound-users-modal-head strong {

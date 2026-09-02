@@ -2,7 +2,7 @@
 
 > 此仓库为公开维护版本，基于 [FranzKafkaYu/x-ui](https://github.com/FranzKafkaYu/x-ui) 演进，并保留原项目的 GPL-3.0 许可证和署名。
 
-当前稳定发布：`v1.0.1`。
+当前稳定发布：`v1.0.3`。
 
 ## 一键安装
 
@@ -16,7 +16,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/sc
 - 首次安装：端口 `54321`，账号 `admin`，密码 `admin`；终端会显示完整访问地址（含 5 位随机路径），并自动放行本机 UFW / firewalld 的 TCP `54321`。
 - 更新安装会保留面板数据并备份原运行文件；完成后会再次显示当前控制面板访问地址。
 
-云厂商防火墙需在控制台单独放行端口。安装完成后可执行 `x-ui update` 更新。若需固定版本：`XUI_VERSION=v1.0.1 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)`。
+云厂商防火墙需在控制台单独放行端口。安装完成后可执行 `x-ui update` 更新。若需固定版本：`XUI_VERSION=v1.0.3 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)`。
 
 面向日常服务器运维的 Xray 控制面板：优先呈现运行健康、流量和入站状态，并将高频管理操作收敛为更清晰的工作流。
 
