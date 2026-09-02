@@ -43,15 +43,8 @@ choose_panel_port() {
         [[ "$XUI_PORT" =~ ^[0-9]+$ && "$XUI_PORT" -ge 1024 && "$XUI_PORT" -le 65535 ]] || fail "XUI_PORT 必须是 1024–65535 的端口号。"
         printf '%s' "$XUI_PORT"; return
     fi
-    while [[ "$attempt" -lt 20 ]]; do
-        hex="$(random_hex 2)"
-        candidate=$((20000 + (16#${hex} % 40000)))
-        if ! command -v ss >/dev/null 2>&1 || ! ss -lnt "sport = :${candidate}" | grep -q LISTEN; then
-            printf '%s' "$candidate"; return
-        fi
-        attempt=$((attempt + 1))
-    done
-    fail "未能找到可用的随机面板端口，请通过 XUI_PORT 指定端口后重试。"
+    # Keep the conventional x-ui port so cloud firewalls can be preconfigured.
+    printf '54321'
 }
 
 resolve_access_host() {
