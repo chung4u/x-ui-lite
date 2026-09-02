@@ -27,6 +27,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p package/bin
+          if [[ "$TARGET_ARCH" == "arm64" ]]; then
+            sudo apt-get update -y
+            sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+            export CC=aarch64-linux-gnu-gcc
+          fi
           CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -trimpath -o package/x-ui .
           cp "bin/xray-linux-${TARGET_ARCH}" package/bin/
           cp bin/geoip.dat bin/geosite.dat package/bin/
