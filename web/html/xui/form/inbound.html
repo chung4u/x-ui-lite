@@ -23,6 +23,7 @@
             <a-form-item label="端口" required>
                 <a-input id="inbound-port-input" type="number" min="1" max="65535"
                          v-model.number="inbound.port" aria-label="入站端口"></a-input>
+                <div class="form-field-hint">新增时会检查本机防火墙；如未放行，可在保存时一键添加 TCP 放行规则。</div>
             </a-form-item>
             <a-form-item>
                 <span slot="label">

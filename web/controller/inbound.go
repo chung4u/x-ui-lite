@@ -14,6 +14,7 @@ import (
 type InboundController struct {
 	inboundService service.InboundService
 	xrayService    service.XrayService
+	firewallService service.FirewallService
 }
 
 type inboundUserProfileForm struct {
@@ -33,10 +34,32 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/inbound")
 
 	g.POST("/list", a.getInbounds)
+	g.POST("/firewall/:port/status", a.getFirewallPortStatus)
+	g.POST("/firewall/:port/open", a.openFirewallPort)
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
 	g.POST("/:id/userProfile", a.getUserProfile)
+}
+
+func (a *InboundController) getFirewallPortStatus(c *gin.Context) {
+	port, err := strconv.Atoi(c.Param("port"))
+	if err != nil {
+		jsonObj(c, nil, fmt.Errorf("端口格式不正确"))
+		return
+	}
+	status, err := a.firewallService.CheckTCPPort(port)
+	jsonObj(c, status, err)
+}
+
+func (a *InboundController) openFirewallPort(c *gin.Context) {
+	port, err := strconv.Atoi(c.Param("port"))
+	if err != nil {
+		jsonObj(c, nil, fmt.Errorf("端口格式不正确"))
+		return
+	}
+	status, err := a.firewallService.OpenTCPPort(port)
+	jsonObj(c, status, err)
 }
 
 func (a *InboundController) startTask() {

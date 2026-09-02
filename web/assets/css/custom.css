@@ -962,6 +962,13 @@ textarea {
     font-size: 13px;
 }
 
+.form-field-hint {
+    margin-top: 6px;
+    color: #91a0b8;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
 .inbound-users-notice {
     margin-bottom: 16px;
 }

@@ -615,7 +615,49 @@
                 };
             },
             async addInbound(inbound, dbInbound) {
+                const canAdd = await this.ensureFirewallAccess(inbound.port);
+                if (!canAdd) return null;
                 return await this.submit('/xui/inbound/add', this.inboundPayload(inbound, dbInbound), inModal);
+            },
+            async ensureFirewallAccess(port) {
+                const msg = await HttpUtil.post(`/xui/inbound/firewall/${port}/status`);
+                if (!msg.success || !msg.obj) return false;
+                const status = msg.obj;
+                if (status.state === 'open') return true;
+                if (status.state === 'unknown') {
+                    this.$warning({
+                        title: `请确认 TCP ${port} 已放行`,
+                        content: `${status.message} 云厂商防火墙也需要单独确认。`,
+                        okText: '返回检查',
+                    });
+                    return false;
+                }
+                if (!status.canOpen) {
+                    this.$warning({
+                        title: `TCP ${port} 尚未放行`,
+                        content: status.message,
+                        okText: '返回检查',
+                    });
+                    return false;
+                }
+                return await new Promise(resolve => {
+                    this.$confirm({
+                        title: `TCP ${port} 尚未放行`,
+                        content: `${status.message} 是否自动添加 ${status.manager} 放行规则？此操作只会放行该入站的 TCP 端口。`,
+                        okText: `自动放行 TCP ${port}`,
+                        cancelText: '暂不添加',
+                        onOk: async () => {
+                            const result = await HttpUtil.post(`/xui/inbound/firewall/${port}/open`);
+                            if (result.success) {
+                                this.$message.success(`TCP ${port} 已放行，正在创建入站。`);
+                                resolve(true);
+                            } else {
+                                resolve(false);
+                            }
+                        },
+                        onCancel: () => resolve(false),
+                    });
+                });
             },
             async updateInbound(inbound, dbInbound, modal = inModal) {
                 return await this.submit(`/xui/inbound/update/${dbInbound.id}`, this.inboundPayload(inbound, dbInbound), modal);
