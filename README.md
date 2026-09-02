@@ -37,6 +37,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/sc
 ```
 
 - 安装过程保留 `/etc/x-ui/x-ui.db`，不会重置面板账号、入站或流量数据。
+- 首次安装会自动生成随机访问端口、账号和密码，并在安装结束时输出完整访问地址；请保存该信息并放行对应 TCP 端口。
 - 运行文件会备份到 `/usr/local/x-ui/backups/<时间>/`，然后重启 `x-ui` 服务；不会修改服务器网络或 VPN。
 - 如需先上传文件、暂不重启服务，请先执行 `export XUI_NO_RESTART=1`；安装结束后手动运行 `systemctl restart x-ui`。
 - 默认安装 `main`。若需固定某个提交或标签，请设置 `XUI_REF=<提交 SHA 或标签>` 后再执行。

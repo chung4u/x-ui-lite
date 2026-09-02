@@ -15,6 +15,11 @@ GO_VERSION="${XUI_GO_VERSION:-1.22.12}"
 WORK_DIR=""
 GO_CMD=""
 AUTH_HEADERS=()
+FIRST_INSTALL=0
+PANEL_USERNAME=""
+PANEL_PASSWORD=""
+PANEL_PORT=""
+ACCESS_HOST=""
 
 info() { printf '\033[1;34m[信息]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[完成]\033[0m %s\n' "$*"; }
@@ -54,6 +59,51 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "缺少命令：$1"
 }
 
+random_hex() {
+    od -An -N"$1" -tx1 /dev/urandom | tr -d '[:space:]'
+}
+
+choose_panel_port() {
+    local attempt=0
+    local hex=""
+    local candidate=""
+
+    if [[ -n "${XUI_PORT:-}" ]]; then
+        [[ "${XUI_PORT}" =~ ^[0-9]+$ && "${XUI_PORT}" -ge 1024 && "${XUI_PORT}" -le 65535 ]] || fail "XUI_PORT 必须是 1024–65535 的端口号。"
+        printf '%s' "$XUI_PORT"
+        return
+    fi
+
+    while [[ "$attempt" -lt 20 ]]; do
+        hex="$(random_hex 2)"
+        candidate=$((20000 + (16#${hex} % 40000)))
+        if ! command -v ss >/dev/null 2>&1 || ! ss -lnt "sport = :${candidate}" | grep -q LISTEN; then
+            printf '%s' "$candidate"
+            return
+        fi
+        attempt=$((attempt + 1))
+    done
+    fail "未能找到可用的随机面板端口，请通过 XUI_PORT 指定端口后重试。"
+}
+
+resolve_access_host() {
+    if [[ -n "${XUI_ACCESS_HOST:-}" ]]; then
+        printf '%s' "$XUI_ACCESS_HOST"
+        return
+    fi
+    curl --fail --silent --show-error --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'
+}
+
+show_first_install_access() {
+    printf '\n\033[1;32m========================================\n'
+    printf '          X-UI 首次安装完成\n'
+    printf '========================================\033[0m\n'
+    printf '访问地址：\033[1;36mhttp://%s:%s/\033[0m\n' "$ACCESS_HOST" "$PANEL_PORT"
+    printf '用户名：  \033[1;36m%s\033[0m\n' "$PANEL_USERNAME"
+    printf '密码：    \033[1;36m%s\033[0m\n' "$PANEL_PASSWORD"
+    printf '\n请确认防火墙已放行 TCP %s，并在首次登录后妥善保存或更新凭据。\n' "$PANEL_PORT"
+}
+
 ensure_go() {
     local current_version=""
     local current_minor=""
@@ -89,6 +139,7 @@ ensure_go() {
 }
 
 info "准备安装 ${REPOSITORY}@${REF}（${ARCH}）"
+[[ -f "${DATA_DIR}/x-ui.db" ]] || FIRST_INSTALL=1
 install_build_dependencies
 require_command curl
 require_command tar
@@ -137,14 +188,28 @@ install -m 0755 "$SOURCE_DIR/scripts/install.sh" "$INSTALL_DIR/install.sh"
 install -m 0644 "$SOURCE_DIR/x-ui.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 ln -sfn "$INSTALL_DIR/x-ui.sh" /usr/local/bin/x-ui
 
+if [[ "$FIRST_INSTALL" == "1" ]]; then
+    PANEL_USERNAME="${XUI_USERNAME:-xui-$(random_hex 4)}"
+    PANEL_PASSWORD="${XUI_PASSWORD:-$(random_hex 16)}"
+    PANEL_PORT="$(choose_panel_port)"
+    ACCESS_HOST="$(resolve_access_host)"
+    [[ -n "$ACCESS_HOST" ]] || ACCESS_HOST="<服务器公网 IP>"
+
+    info "初始化首次安装的访问凭据"
+    "$INSTALL_DIR/x-ui" setting -username "$PANEL_USERNAME" -password "$PANEL_PASSWORD"
+    "$INSTALL_DIR/x-ui" setting -port "$PANEL_PORT"
+fi
+
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
 if [[ "${XUI_NO_RESTART:-0}" == "1" ]]; then
     success "文件已安装。XUI_NO_RESTART=1 已启用，请确认后手动执行：systemctl restart ${SERVICE_NAME}"
+    [[ "$FIRST_INSTALL" == "1" ]] && show_first_install_access
 else
     info "重启面板服务（不会修改服务器网络、VPN 或面板数据库）"
     systemctl restart "$SERVICE_NAME"
     systemctl --no-pager --full status "$SERVICE_NAME"
     success "安装完成。数据目录保持为 ${DATA_DIR}。"
+    [[ "$FIRST_INSTALL" == "1" ]] && show_first_install_access
 fi
