@@ -4,6 +4,20 @@
 
 当前稳定发布：`v1.0.0`。
 
+## 一键安装
+
+在目标服务器以 `root` 身份执行：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)
+```
+
+- 自动识别 amd64 / arm64 并下载预编译版本，无需安装 Go。
+- 首次安装：端口 `54321`，账号 `admin`，密码 `admin`；终端会显示完整访问地址（含 5 位随机路径）。
+- 更新安装会保留面板数据并备份原运行文件；完成后自动重启 `x-ui` 服务。
+
+安装完成后可执行 `x-ui update` 更新。若需固定版本：`XUI_VERSION=v1.0.0 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)`。
+
 面向日常服务器运维的 Xray 控制面板：优先呈现运行健康、流量和入站状态，并将高频管理操作收敛为更清晰的工作流。
 
 ## 本版关键能力
@@ -30,19 +44,3 @@
 - 为避免影响既有节点，Reality 等现有传输配置在用户管理流程中保持原样；无需要时不建议修改。
 - 上游仓库的“一键安装/更新”脚本会拉取上游版本，**不适用于部署或更新本维护版**。
 - 完整变更见 [CHANGELOG.md](./CHANGELOG.md)。
-
-## 一键安装
-
-在目标服务器以 root 身份执行（自动识别 amd64/arm64，下载已编译 Release，无需安装 Go）：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-roylive/main/scripts/install.sh)
-```
-
-- 安装过程保留 `/etc/x-ui/x-ui.db`，不会重置面板账号、入站或流量数据。
-- 首次安装使用默认账号 `admin` / `admin`，自动生成 5 位大写字母或数字组成的访问路径，面板端口默认为 `54321`，并在安装结束时输出完整访问地址；请首次登录后立即修改密码并放行 TCP `54321`。
-- 运行文件会备份到 `/usr/local/x-ui/backups/<时间>/`，然后重启 `x-ui` 服务；不会修改服务器网络或 VPN。
-- 如需先上传文件、暂不重启服务，请先执行 `export XUI_NO_RESTART=1`；安装结束后手动运行 `systemctl restart x-ui`。
-- 安装完成后，`x-ui install` 与 `x-ui update` 会调用同一项目安装器；不会再拉取上游版本。
-- 默认安装最新 Release。若需固定版本，请设置 `XUI_VERSION=<发布标签>` 后再执行。
-- GitHub Actions 会在推送 `v*` 标签时自动构建 Linux amd64/arm64 安装包并生成 Release。
