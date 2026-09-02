@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# X-UI RoyLive prebuilt installer.
+# X-UI Lite prebuilt installer.
 # Downloads a signed-by-transport release asset and preserves /etc/x-ui/x-ui.db.
 
 set -Eeuo pipefail
 
-REPOSITORY="${XUI_REPOSITORY:-chung4u/x-ui-roylive}"
+REPOSITORY="${XUI_REPOSITORY:-chung4u/x-ui-lite}"
 VERSION="${XUI_VERSION:-latest}"
 INSTALL_DIR="${XUI_INSTALL_DIR:-/usr/local/x-ui}"
 DATA_DIR="${XUI_DATA_DIR:-/etc/x-ui}"

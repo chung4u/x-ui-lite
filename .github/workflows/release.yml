@@ -60,5 +60,5 @@ jobs:
           set -euo pipefail
           gh release create "$TAG_NAME" release-assets/x-ui-linux-*.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
-            --title "X-UI RoyLive $TAG_NAME" \
+            --title "X-UI Lite $TAG_NAME" \
             --generate-notes

@@ -778,7 +778,7 @@ disable_auto_clear_log() {
 }
 
 show_usage() {
-    echo "x-ui 管理脚本使用方法: "
+    echo "X-UI Lite 管理脚本使用方法: "
     echo "------------------------------------------"
     echo "x-ui              - 显示管理菜单 (功能更多)"
     echo "x-ui start        - 启动 x-ui 面板"
@@ -800,7 +800,7 @@ show_usage() {
 
 show_menu() {
     echo -e "
-  ${green}x-ui 面板管理脚本${plain}
+  ${green}X-UI Lite 管理脚本${plain}
   ${green}0.${plain} 退出脚本
 ————————————————
   ${green}1.${plain} 安装 x-ui
