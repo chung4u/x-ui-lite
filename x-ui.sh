@@ -103,39 +103,24 @@ before_show_menu() {
     show_menu
 }
 
-run_private_installer() {
-    local installer="/usr/local/x-ui/install-private.sh"
-    local supplied_token=0
+run_project_installer() {
+    local installer="/usr/local/x-ui/install.sh"
 
     if [[ ! -x "$installer" ]]; then
-        LOGE "未找到私有版安装器：${installer}"
-        LOGE "请按私有仓库 README 的“服务器远程一键安装”说明执行。"
+        LOGE "未找到项目安装器：${installer}"
+        LOGE "请按项目 README 的“一键安装”说明执行。"
         return 1
     fi
 
-    if [[ -z "${XUI_GITHUB_TOKEN:-}" && -z "${GH_TOKEN:-}" ]]; then
-        read -rsp "请输入仅有仓库只读权限的 GitHub Token: " XUI_GITHUB_TOKEN
-        echo
-        if [[ -z "$XUI_GITHUB_TOKEN" ]]; then
-            LOGE "未输入 Token，已取消。"
-            return 1
-        fi
-        export XUI_GITHUB_TOKEN
-        supplied_token=1
-    fi
-
     bash "$installer"
-    local result=$?
-    [[ $supplied_token == 1 ]] && unset XUI_GITHUB_TOKEN
-    return $result
 }
 
 install() {
-    run_private_installer
+    run_project_installer
 }
 
 update() {
-    confirm "将从私有仓库构建并更新面板，现有面板数据会保留。是否继续?" "n"
+    confirm "将从项目仓库构建并更新面板，现有面板数据会保留。是否继续?" "n"
     if [[ $? != 0 ]]; then
         LOGE "已取消"
         if [[ $# == 0 ]]; then
@@ -143,7 +128,7 @@ update() {
         fi
         return 0
     fi
-    if run_private_installer; then
+    if run_project_installer; then
         LOGI "更新完成，面板已重启。"
     fi
 }

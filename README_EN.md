@@ -1,7 +1,7 @@
 # X-UI
 
 [简体中文](./README.md)| ENGLISH  
-> **Private maintained edition.** This repository is not publicly released. Current product scope, screenshots, release notes and compatibility notes are maintained in the [Chinese README](./README.md) and [CHANGELOG](./CHANGELOG.md). The historical content below describes the upstream project and may not represent this private edition.
+> **Public maintained edition.** This repository is publicly available. Current product scope, screenshots, release notes and compatibility notes are maintained in the [Chinese README](./README.md) and [CHANGELOG](./CHANGELOG.md). The historical content below describes the upstream project and may not represent this maintained edition.
 
 X-UI is a webUI panel based on Xray-core which supports multi protocols and multi users  
 This project is a fork of [vaxilu&#39;s project](https://github.com/vaxilu/x-ui),and it is a experiental project which used by myself for learning golang   

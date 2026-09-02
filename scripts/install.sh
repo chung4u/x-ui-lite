@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# X-UI RoyLive private edition installer.
-# Downloads a chosen revision from the private repository, builds it on the server,
+# X-UI RoyLive public edition installer.
+# Downloads a chosen revision from the public repository, builds it on the server,
 # and installs it without touching /etc/x-ui/x-ui.db.
 
 set -Eeuo pipefail
@@ -14,6 +14,7 @@ TOKEN="${XUI_GITHUB_TOKEN:-${GH_TOKEN:-}}"
 GO_VERSION="${XUI_GO_VERSION:-1.22.12}"
 WORK_DIR=""
 GO_CMD=""
+AUTH_HEADERS=()
 
 info() { printf '\033[1;34m[信息]\033[0m %s\n' "$*"; }
 success() { printf '\033[1;32m[完成]\033[0m %s\n' "$*"; }
@@ -25,7 +26,9 @@ cleanup() {
 trap cleanup EXIT
 
 [[ "${EUID}" -eq 0 ]] || fail "请使用 root 或 sudo 执行此安装脚本。"
-[[ -n "$TOKEN" ]] || fail "未检测到 XUI_GITHUB_TOKEN（或 GH_TOKEN）。请使用仅授予此私有仓库 Contents: Read-only 权限的 GitHub Token。"
+if [[ -n "$TOKEN" ]]; then
+    AUTH_HEADERS=(-H "Authorization: Bearer ${TOKEN}")
+fi
 
 case "$(uname -m)" in
     x86_64|amd64) ARCH="amd64" ;;
@@ -90,13 +93,13 @@ install_build_dependencies
 require_command curl
 require_command tar
 
-WORK_DIR="$(mktemp -d /tmp/x-ui-private-install.XXXXXX)"
+WORK_DIR="$(mktemp -d /tmp/x-ui-install.XXXXXX)"
 ARCHIVE="$WORK_DIR/source.tar.gz"
 ensure_go
 
-info "下载私有版本源码"
+info "下载项目源码"
 curl --fail --silent --show-error --location --retry 3 \
-    -H "Authorization: Bearer ${TOKEN}" \
+    "${AUTH_HEADERS[@]}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPOSITORY}/tarball/${REF}" \
     -o "$ARCHIVE"
@@ -130,7 +133,7 @@ install -m 0755 "$SOURCE_DIR/bin/xray-linux-${ARCH}" "$INSTALL_DIR/bin/xray-linu
 install -m 0644 "$SOURCE_DIR/bin/geoip.dat" "$INSTALL_DIR/bin/geoip.dat"
 install -m 0644 "$SOURCE_DIR/bin/geosite.dat" "$INSTALL_DIR/bin/geosite.dat"
 install -m 0755 "$SOURCE_DIR/x-ui.sh" "$INSTALL_DIR/x-ui.sh"
-install -m 0755 "$SOURCE_DIR/scripts/install-private.sh" "$INSTALL_DIR/install-private.sh"
+install -m 0755 "$SOURCE_DIR/scripts/install.sh" "$INSTALL_DIR/install.sh"
 install -m 0644 "$SOURCE_DIR/x-ui.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 ln -sfn "$INSTALL_DIR/x-ui.sh" /usr/local/bin/x-ui
 
