@@ -29,7 +29,7 @@ jobs:
           mkdir -p package/bin
           if [[ "$TARGET_ARCH" == "arm64" ]]; then
             sudo apt-get update -y
-            sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu
+            sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
             export CC=aarch64-linux-gnu-gcc
           fi
           CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -trimpath -o package/x-ui .
