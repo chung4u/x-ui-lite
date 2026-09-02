@@ -105,8 +105,8 @@ install -m 0644 "$WORK_DIR/x-ui.service" "/etc/systemd/system/${SERVICE_NAME}.se
 ln -sfn "$INSTALL_DIR/x-ui.sh" /usr/local/bin/x-ui
 
 if [[ "$FIRST_INSTALL" == "1" ]]; then
-    PANEL_USERNAME="${XUI_USERNAME:-xui-$(random_hex 4)}"
-    PANEL_PASSWORD="${XUI_PASSWORD:-$(random_hex 16)}"
+    PANEL_USERNAME="${XUI_USERNAME:-admin}"
+    PANEL_PASSWORD="${XUI_PASSWORD:-admin}"
     PANEL_PORT="$(choose_panel_port)"
     PANEL_BASE_PATH="/${XUI_BASE_PATH:-$(random_hex 8)}/"
     ACCESS_HOST="$(resolve_access_host)"
