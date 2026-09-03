@@ -1,5 +1,10 @@
 # 更新记录
 
+## v1.0.2 · 2026-09-03 · REALITY 伪装站点更新
+
+- 移除不可用的 Microsoft 与 Bing 预设，更新为 Apple、Cloudflare、Speedtest、NVIDIA 与 Amazon。
+- 预设站点统一自动匹配 SNI 和握手目标，减少手工填写错误。
+
 ## v1.0.1 · 2026-09-03 · Flow 兼容性修复
 
 - VLESS 与 REALITY 的 Flow 仅保留“无”和 `xtls-rprx-vision`，移除当前 Xray 核心不支持的旧值。
