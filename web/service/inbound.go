@@ -1,15 +1,19 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
 	"time"
 	"x-ui/database"
 	"x-ui/database/model"
 	"x-ui/util/common"
 	"x-ui/xray"
 )
+
+const supportedVLESSFlow = "xtls-rprx-vision"
 
 type InboundService struct {
 }
@@ -71,6 +75,9 @@ func (s *InboundService) checkPortExist(port int, ignoreId int) (bool, error) {
 }
 
 func (s *InboundService) AddInbound(inbound *model.Inbound) error {
+	if err := validateInboundFlow(inbound); err != nil {
+		return err
+	}
 	exist, err := s.checkPortExist(inbound.Port, 0)
 	if err != nil {
 		return err
@@ -84,6 +91,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) error {
 
 func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 	for _, inbound := range inbounds {
+		if err := validateInboundFlow(inbound); err != nil {
+			return err
+		}
 		exist, err := s.checkPortExist(inbound.Port, 0)
 		if err != nil {
 			return err
@@ -144,6 +154,9 @@ func (s *InboundService) GetInboundUserTraffic(inboundID int) ([]*model.InboundU
 }
 
 func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
+	if err := validateInboundFlow(inbound); err != nil {
+		return err
+	}
 	exist, err := s.checkPortExist(inbound.Port, inbound.Id)
 	if err != nil {
 		return err
@@ -186,6 +199,24 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
 		}
 		return nil
 	})
+}
+
+func validateInboundFlow(inbound *model.Inbound) error {
+	if inbound.Protocol != model.VLESS || strings.TrimSpace(inbound.Settings) == "" {
+		return nil
+	}
+
+	settings := vlessInboundSettings{}
+	if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
+		return fmt.Errorf("VLESS 用户配置格式无效: %w", err)
+	}
+	for _, client := range settings.Clients {
+		flow := strings.TrimSpace(client.Flow)
+		if flow != "" && flow != supportedVLESSFlow {
+			return fmt.Errorf("VLESS Flow 仅支持“无”或 %s", supportedVLESSFlow)
+		}
+	}
+	return nil
 }
 
 func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {

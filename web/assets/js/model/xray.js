@@ -40,10 +40,9 @@ const RULE_DOMAIN = {
     SPEEDTEST: 'geosite:speedtest',
 };
 
-const FLOW_CONTROL = {
-    ORIGIN: "xtls-rprx-origin",
-    DIRECT: "xtls-rprx-direct",
-};
+const FLOW_CONTROL = [
+    "xtls-rprx-vision",
+];
 
 Object.freeze(Protocols);
 Object.freeze(VmessMethods);
@@ -1322,7 +1321,7 @@ Inbound.TrojanSettings = class extends Inbound.Settings {
     }
 };
 Inbound.TrojanSettings.Client = class extends XrayCommonClass {
-    constructor(password=RandomUtil.randomSeq(10), flow=FLOW_CONTROL.DIRECT) {
+    constructor(password=RandomUtil.randomSeq(10), flow='') {
         super();
         this.password = password;
         this.flow = flow;

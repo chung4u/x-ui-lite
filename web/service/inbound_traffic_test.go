@@ -58,6 +58,32 @@ func TestAddTrafficPersistsUserTraffic(t *testing.T) {
 	}
 }
 
+func TestValidateInboundFlow(t *testing.T) {
+	tests := []struct {
+		name string
+		flow string
+		want bool
+	}{
+		{name: "empty flow", flow: "", want: true},
+		{name: "vision flow", flow: "xtls-rprx-vision", want: true},
+		{name: "legacy origin flow", flow: "xtls-rprx-origin", want: false},
+		{name: "legacy direct flow", flow: "xtls-rprx-direct", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inbound := &model.Inbound{
+				Protocol: model.VLESS,
+				Settings: `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","flow":"` + tt.flow + `"}]}`,
+			}
+			err := validateInboundFlow(inbound)
+			if (err == nil) != tt.want {
+				t.Fatalf("validateInboundFlow() error = %v, want success = %v", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestSyncMonthlyTrafficPeriod(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "x-ui.db")
 	if err := database.InitDB(databasePath); err != nil {
