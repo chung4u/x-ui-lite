@@ -36,7 +36,7 @@ jobs:
                 export CC=aarch64-linux-gnu-gcc
               fi
               mkdir -p package/bin
-              CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -trimpath -o package/x-ui .
+              CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -buildvcs=false -trimpath -o package/x-ui .
               case "$TARGET_ARCH" in
                 amd64)
                   XRAY_ASSET="Xray-linux-64.zip"
