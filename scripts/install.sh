@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # X-UI Lite prebuilt installer.
-# Downloads a signed-by-transport release asset and preserves /etc/x-ui/x-ui.db.
+# Installs the current X-UI Lite 1.0 release and preserves /etc/x-ui/x-ui.db.
 
 set -Eeuo pipefail
 
 REPOSITORY="${XUI_REPOSITORY:-chung4u/x-ui-lite}"
-VERSION="${XUI_VERSION:-latest}"
+VERSION="v1.0.2"
 INSTALL_DIR="${XUI_INSTALL_DIR:-/usr/local/x-ui}"
 DATA_DIR="${XUI_DATA_DIR:-/etc/x-ui}"
 SERVICE_NAME="${XUI_SERVICE_NAME:-x-ui}"
@@ -31,6 +31,9 @@ cleanup() { [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] && rm -rf -- "$WORK_DIR"; }
 trap cleanup EXIT
 
 [[ "${EUID}" -eq 0 ]] || fail "请使用 root 或 sudo 执行此安装脚本。"
+if [[ -n "${XUI_VERSION:-}" && "$XUI_VERSION" != "$VERSION" ]]; then
+    fail "安装器仅支持当前 1.0 正式版（${VERSION}）。"
+fi
 if [[ -n "$TOKEN" ]]; then AUTH_HEADERS=(-H "Authorization: Bearer ${TOKEN}"); fi
 
 case "$(uname -m)" in
@@ -159,11 +162,6 @@ require_command tar
 [[ -f "${DATA_DIR}/x-ui.db" ]] || FIRST_INSTALL=1
 WORK_DIR="$(mktemp -d /tmp/x-ui-install.XXXXXX)"
 ARCHIVE="$WORK_DIR/x-ui-linux-${ARCH}.tar.gz"
-
-if [[ "$VERSION" == "latest" ]]; then
-    VERSION="$(curl --fail --silent --show-error --location "${AUTH_HEADERS[@]}" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${REPOSITORY}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-    [[ -n "$VERSION" ]] || fail "未找到可用 Release，请稍后再试或设置 XUI_VERSION。"
-fi
 
 info "下载已编译版本 ${VERSION}（Linux ${ARCH}）"
 curl --fail --silent --show-error --location --retry 3 \
