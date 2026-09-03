@@ -21,6 +21,7 @@ import (
 )
 
 var trafficRegex = regexp.MustCompile("(inbound|outbound)>>>([^>]+)>>>traffic>>>(downlink|uplink)")
+var userTrafficRegex = regexp.MustCompile("user>>>([^>]+)>>>traffic>>>(downlink|uplink)")
 
 func parseTrafficName(name string) (isInbound bool, tag string, isDown bool, ok bool) {
 	matchs := trafficRegex.FindStringSubmatch(name)
@@ -28,6 +29,30 @@ func parseTrafficName(name string) (isInbound bool, tag string, isDown bool, ok 
 		return false, "", false, false
 	}
 	return matchs[1] == "inbound", matchs[2], matchs[3] == "downlink", true
+}
+
+func userTrafficEmail(tag string, clientID string) string {
+	return fmt.Sprintf("xui-user:%s:%s", tag, clientID)
+}
+
+func parseUserTrafficEmail(email string) (tag string, clientID string, ok bool) {
+	if !strings.HasPrefix(email, "xui-user:") {
+		return "", "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(email, "xui-user:"), ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func parseUserTrafficName(name string) (tag string, clientID string, isDown bool, ok bool) {
+	matches := userTrafficRegex.FindStringSubmatch(name)
+	if len(matches) != 3 {
+		return "", "", false, false
+	}
+	tag, clientID, ok = parseUserTrafficEmail(matches[1])
+	return tag, clientID, matches[2] == "downlink", ok
 }
 
 func GetBinaryName() string {
@@ -257,22 +282,37 @@ func (p *process) GetTraffic(reset bool) ([]*Traffic, error) {
 		return nil, err
 	}
 	tagTrafficMap := map[string]*Traffic{}
+	userTrafficMap := map[string]*Traffic{}
 	traffics := make([]*Traffic, 0)
 	for _, stat := range resp.GetStat() {
 		isInbound, tag, isDown, ok := parseTrafficName(stat.Name)
-		if !ok {
-			continue
-		}
-		if tag == "api" {
-			continue
-		}
-		traffic, ok := tagTrafficMap[tag]
-		if !ok {
-			traffic = &Traffic{
-				IsInbound: isInbound,
-				Tag:       tag,
+		if ok {
+			if tag == "api" {
+				continue
 			}
-			tagTrafficMap[tag] = traffic
+			traffic, exists := tagTrafficMap[tag]
+			if !exists {
+				traffic = &Traffic{IsInbound: isInbound, Tag: tag}
+				tagTrafficMap[tag] = traffic
+				traffics = append(traffics, traffic)
+			}
+			if isDown {
+				traffic.Down = stat.Value
+			} else {
+				traffic.Up = stat.Value
+			}
+			continue
+		}
+
+		userTag, clientID, isDown, userStats := parseUserTrafficName(stat.Name)
+		if !userStats {
+			continue
+		}
+		key := userTag + ":" + clientID
+		traffic, exists := userTrafficMap[key]
+		if !exists {
+			traffic = &Traffic{IsUser: true, UserTag: userTag, ClientID: clientID}
+			userTrafficMap[key] = traffic
 			traffics = append(traffics, traffic)
 		}
 		if isDown {

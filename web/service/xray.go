@@ -74,6 +74,9 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		inboundConfig := inbound.GenXrayInboundConfig()
 		xrayConfig.InboundConfigs = append(xrayConfig.InboundConfigs, *inboundConfig)
 	}
+	if err = xrayConfig.EnableUserTrafficStats(); err != nil {
+		return nil, err
+	}
 	return xrayConfig, nil
 }
 

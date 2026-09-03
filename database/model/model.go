@@ -49,6 +49,27 @@ type Inbound struct {
 	Sniffing       string   `json:"sniffing" form:"sniffing"`
 }
 
+// InboundUserTraffic stores the current billing-cycle traffic accumulated for
+// one VLESS UUID. It deliberately uses the UUID instead of a display name so
+// renaming a user never breaks their historical counter.
+type InboundUserTraffic struct {
+	Id        int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	InboundId int    `json:"inboundId" gorm:"uniqueIndex:idx_inbound_user_traffic"`
+	ClientId  string `json:"clientId" gorm:"uniqueIndex:idx_inbound_user_traffic"`
+	Up        int64  `json:"up"`
+	Down      int64  `json:"down"`
+}
+
+// InboundSubscription gives one VLESS UUID an opaque, stable subscription
+// address. The token is intentionally separate from the UUID so a user can
+// safely refresh configuration in Clash Verge without exposing panel access.
+type InboundSubscription struct {
+	Id        int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	InboundId int    `json:"inboundId" gorm:"uniqueIndex:idx_inbound_subscription"`
+	ClientId  string `json:"clientId" gorm:"uniqueIndex:idx_inbound_subscription"`
+	Token     string `json:"-" gorm:"uniqueIndex"`
+}
+
 func (i *Inbound) GenXrayInboundConfig() *xray.InboundConfig {
 	listen := i.Listen
 	if listen != "" {

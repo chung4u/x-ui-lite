@@ -6,6 +6,7 @@ import (
 	"time"
 	"x-ui/database"
 	"x-ui/database/model"
+	"x-ui/xray"
 )
 
 func TestDecideInboundTrafficPeriod(t *testing.T) {
@@ -32,6 +33,31 @@ func TestDecideInboundTrafficPeriod(t *testing.T) {
 	}
 }
 
+func TestAddTrafficPersistsUserTraffic(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "x-ui.db")
+	if err := database.InitDB(databasePath); err != nil {
+		t.Fatalf("InitDB() error = %v", err)
+	}
+	inbound := &model.Inbound{UserId: 1, Port: 22002, Tag: "inbound-22002", Protocol: model.VLESS}
+	if err := database.GetDB().Create(inbound).Error; err != nil {
+		t.Fatalf("create inbound: %v", err)
+	}
+	service := InboundService{}
+	if err := service.AddTraffic([]*xray.Traffic{
+		{IsInbound: true, Tag: inbound.Tag, Up: 10, Down: 20},
+		{IsUser: true, UserTag: inbound.Tag, ClientID: "user-a", Up: 7, Down: 11},
+	}); err != nil {
+		t.Fatalf("AddTraffic() error = %v", err)
+	}
+	traffics, err := service.GetInboundUserTraffic(inbound.Id)
+	if err != nil || len(traffics) != 1 {
+		t.Fatalf("GetInboundUserTraffic() = %#v, %v", traffics, err)
+	}
+	if traffics[0].ClientId != "user-a" || traffics[0].Up != 7 || traffics[0].Down != 11 {
+		t.Fatalf("unexpected user traffic: %#v", traffics[0])
+	}
+}
+
 func TestSyncMonthlyTrafficPeriod(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "x-ui.db")
 	if err := database.InitDB(databasePath); err != nil {
@@ -50,6 +76,10 @@ func TestSyncMonthlyTrafficPeriod(t *testing.T) {
 	}
 	if err := database.GetDB().Create(inbounds).Error; err != nil {
 		t.Fatalf("create inbounds: %v", err)
+	}
+	userTraffic := &model.InboundUserTraffic{InboundId: inbounds[2].Id, ClientId: "user-cycle", Up: 12, Down: 34}
+	if err := database.GetDB().Create(userTraffic).Error; err != nil {
+		t.Fatalf("create user traffic: %v", err)
 	}
 
 	service := InboundService{}
@@ -76,6 +106,13 @@ func TestSyncMonthlyTrafficPeriod(t *testing.T) {
 	}
 	if got[3].Up != 0 || got[3].Down != 0 || got[3].Enable || got[3].TrafficExhausted {
 		t.Fatalf("expired inbound should stay disabled after cycle reset: %#v", got[3])
+	}
+	var resetUserTraffic model.InboundUserTraffic
+	if err := database.GetDB().Where("inbound_id = ?", inbounds[2].Id).First(&resetUserTraffic).Error; err != nil {
+		t.Fatalf("load user traffic: %v", err)
+	}
+	if resetUserTraffic.Up != 0 || resetUserTraffic.Down != 0 {
+		t.Fatalf("advanced cycle should reset user traffic: %#v", resetUserTraffic)
 	}
 }
 

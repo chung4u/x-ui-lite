@@ -11,27 +11,34 @@
             <span class="inbound-users-add-label">新增用户</span>
         </a-button>
     </div>
-    <a-alert class="inbound-users-notice" type="info" show-icon
-             message="每位用户拥有独立 UUID"
-             description="保存后即可分别复制 VLESS 链接或下载 Clash Verge 配置。"></a-alert>
     <div class="inbound-user-list">
         <article class="inbound-user-item" v-for="(user, index) in userModal.users" :key="user.id">
             <div class="inbound-user-index">[[ index + 1 ]]</div>
-            <div class="inbound-user-fields">
-                <a-input v-model.trim="user.email" :aria-label="`用户 ${index + 1} 名称`" placeholder="用户名称，例如：iPhone"></a-input>
-                <a-input v-model.trim="user.id" :aria-label="`用户 ${index + 1} UUID`" placeholder="UUID"></a-input>
-            </div>
-            <div class="inbound-user-actions">
-                <a-button size="small" icon="copy" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.copyLink(user, index)">复制链接</a-button>
-                <a-button size="small" type="primary" icon="download" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.downloadConfig(user, index)">下载配置</a-button>
-                <a-button v-if="userModal.users.length > 1" size="small" type="link" icon="delete"
-                          @click="userModal.removeUser(index)">删除</a-button>
+            <div class="inbound-user-main">
+                <div class="inbound-user-fields">
+                    <label class="inbound-user-field">
+                        <span>用户名称</span>
+                        <a-input v-model.trim="user.email" :aria-label="`用户 ${index + 1} 名称`" placeholder="例如：iPhone"></a-input>
+                    </label>
+                    <label class="inbound-user-field inbound-user-uuid-field">
+                        <span>UUID</span>
+                        <a-input v-model.trim="user.id" :aria-label="`用户 ${index + 1} UUID`" placeholder="UUID"></a-input>
+                    </label>
+                </div>
+                <div class="inbound-user-actions">
+                    <a-button size="small" type="primary" icon="link" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.copySubscription(user, index)">复制订阅</a-button>
+                    <a-button size="small" icon="copy" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.copyLink(user, index)">复制 VLESS</a-button>
+                    <a-button size="small" icon="qrcode" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.showQrcode(user, index)">二维码</a-button>
+                    <a-button size="small" icon="download" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.downloadConfig(user, index)">下载配置</a-button>
+                    <a-button v-if="userModal.users.length > 1" size="small" type="link" icon="delete"
+                              @click="userModal.removeUser(index)">删除</a-button>
+                </div>
             </div>
         </article>
     </div>
     <template slot="footer">
         <a-button @click="userModal.requestClose">取消</a-button>
-        <a-button type="primary" icon="save" :loading="userModal.confirmLoading" @click="userModal.save">保存用户</a-button>
+        <a-button type="primary" icon="save" :loading="userModal.confirmLoading" @click="userModal.save">保存</a-button>
     </template>
 </a-modal>
 <script>
@@ -82,11 +89,20 @@
                 userModal.setLoading(user.id, false);
             }
         },
-        async copyLink(user, index) {
-            const profile = await userModal.getProfile(user, index);
-            if (!profile) return;
+        async getSubscription(user) {
+            userModal.setLoading(user.id, true);
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${userModal.dbInbound.id}/userSubscription`, {
+                    clientId: user.id,
+                });
+                return msg.success ? msg.obj : null;
+            } finally {
+                userModal.setLoading(user.id, false);
+            }
+        },
+        copyText(value, successMessage) {
             const input = document.createElement('textarea');
-            input.value = profile.link;
+            input.value = value;
             input.setAttribute('readonly', '');
             input.style.position = 'fixed';
             input.style.opacity = '0';
@@ -94,7 +110,17 @@
             input.select();
             document.execCommand('copy');
             document.body.removeChild(input);
-            app.$message.success('VLESS 链接已复制');
+            app.$message.success(successMessage);
+        },
+        async copySubscription(user) {
+            const subscription = await userModal.getSubscription(user);
+            if (!subscription || !subscription.url) return;
+            userModal.copyText(subscription.url, 'Clash Verge 订阅地址已复制');
+        },
+        async copyLink(user, index) {
+            const profile = await userModal.getProfile(user, index);
+            if (!profile || !profile.link) return;
+            userModal.copyText(profile.link, 'VLESS 链接已复制');
         },
         async downloadConfig(user, index) {
             const profile = await userModal.getProfile(user, index);
@@ -109,6 +135,11 @@
             document.body.removeChild(anchor);
             URL.revokeObjectURL(url);
             app.$message.success('Clash Verge 配置已下载');
+        },
+        async showQrcode(user, index) {
+            const profile = await userModal.getProfile(user, index);
+            if (!profile || !profile.link) return;
+            qrModal.show(`${userModal.dbInbound.userDisplayName(user, index)} · 二维码`, profile.link);
         },
         save() {
             if (userModal.users.some(user => !String(user.id || '').trim())) {

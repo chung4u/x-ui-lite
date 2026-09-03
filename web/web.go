@@ -204,6 +204,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 	s.index = controller.NewIndexController(g)
 	s.server = controller.NewServerController(g)
+	controller.NewSubscriptionController(g)
 	s.xui = controller.NewXUIController(g)
 
 	return engine, nil

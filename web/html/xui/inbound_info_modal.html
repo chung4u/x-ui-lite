@@ -1,23 +1,241 @@
 {{define "inboundInfoModal"}}
-{{template "component/inboundInfo"}}
-<a-modal id="inbound-info-modal" v-model="infoModal.visible" title="入站详情"
-         :closable="true" :mask-closable="true" :footer="null">
-    <inbound-info :db-inbound="dbInbound" :inbound="inbound"></inbound-info>
-</a-modal>
+<a-drawer id="inbound-info-modal" placement="right" :visible="infoModal.visible"
+          :width="640" :closable="true" :mask-closable="true" @close="infoModal.close">
+    <template slot="title">
+        <div class="inbound-detail-drawer-title">
+            <span>入站详情</span>
+            <small>配置核验与用户连接信息</small>
+        </div>
+    </template>
+
+    <section class="inbound-detail-hero" aria-label="入站摘要">
+        <div>
+            <span>VLESS 入站</span>
+            <strong>[[ dbInbound.remark || '未命名入站' ]]</strong>
+            <small>端口 [[ dbInbound.port ]] · [[ securityLabel ]]</small>
+        </div>
+        <a-tag :color="dbInbound.enable ? 'green' : 'blue'">[[ dbInbound.enable ? '已启用' : '已停用' ]]</a-tag>
+    </section>
+
+    <section class="inbound-detail-overview-grid" aria-label="入站概览">
+        <div>
+            <span>已配置用户</span>
+            <strong>[[ users.length ]] 位</strong>
+        </div>
+        <div>
+            <span>本周期流量</span>
+            <strong>[[ sizeFormat(dbInbound.up + dbInbound.down) ]]</strong>
+        </div>
+        <div>
+            <span>月度限额</span>
+            <strong>[[ dbInbound.total > 0 ? sizeFormat(dbInbound.total) : '不限额' ]]</strong>
+        </div>
+        <div>
+            <span>到期日期</span>
+            <strong>[[ dbInbound.expiryTime > 0 ? moment(dbInbound.expiryTime).format('YYYY-MM-DD') : '无限期' ]]</strong>
+        </div>
+    </section>
+
+    <section class="inbound-detail-card inbound-detail-connection" aria-label="连接配置">
+        <div class="inbound-detail-section-head">
+            <div>
+                <span>连接配置</span>
+                <small>客户端连接所需的核心参数</small>
+            </div>
+            <a-tag color="blue">[[ securityLabel ]]</a-tag>
+        </div>
+        <div class="inbound-detail-config-grid">
+            <div>
+                <span>服务器</span>
+                <strong>[[ connectionServer ]]</strong>
+            </div>
+            <div>
+                <span>端口</span>
+                <strong>[[ dbInbound.port ]]</strong>
+            </div>
+            <div>
+                <span>传输方式</span>
+                <strong>[[ networkLabel ]]</strong>
+            </div>
+            <div>
+                <span>Flow</span>
+                <strong>[[ defaultFlow || '未设置' ]]</strong>
+            </div>
+        </div>
+    </section>
+
+    <section v-if="isReality" class="inbound-detail-card inbound-detail-reality" aria-label="REALITY 配置">
+        <div class="inbound-detail-section-head">
+            <div>
+                <span>REALITY 伪装配置</span>
+                <small>用于核验握手与客户端兼容性</small>
+            </div>
+            <a-tag color="purple">REALITY</a-tag>
+        </div>
+        <div class="inbound-detail-config-grid">
+            <div>
+                <span>Server Name</span>
+                <strong>[[ realityServerName ]]</strong>
+            </div>
+            <div>
+                <span>握手目标</span>
+                <strong>[[ realityDest ]]</strong>
+            </div>
+            <div>
+                <span>客户端指纹</span>
+                <strong>[[ realityFingerprint ]]</strong>
+            </div>
+            <div>
+                <span>Short ID</span>
+                <strong>[[ realityShortIds ]]</strong>
+            </div>
+            <div class="inbound-detail-full-value">
+                <span>REALITY 公钥</span>
+                <strong>[[ realityPublicKey ]]</strong>
+            </div>
+        </div>
+    </section>
+
+    <section class="inbound-detail-user-traffic">
+        <div class="inbound-detail-section-head">
+            <div>
+                <span>用户与流量</span>
+                <small>各用户的 UUID 与本周期统计</small>
+            </div>
+            <a-tag color="blue">[[ users.length ]] 位用户</a-tag>
+        </div>
+        <a-spin :spinning="infoModal.trafficLoading || infoModal.profileLoading">
+            <div v-if="users.length === 0" class="inbound-detail-empty">
+                <a-icon type="user-add"></a-icon>
+                <span>当前还没有用户</span>
+            </div>
+            <div v-else class="inbound-detail-user-list">
+                <article v-for="(user, index) in users" :key="user.id" class="inbound-user-profile-card">
+                    <header class="inbound-user-profile-head">
+                        <span class="inbound-detail-user-index">[[ index + 1 ]]</span>
+                        <div class="inbound-detail-user-name">
+                            <strong>[[ user.email || `用户 ${index + 1}` ]]</strong>
+                            <small>[[ userTrafficFor(user.id).hasData ? '本周期统计中' : '暂未记录流量' ]]</small>
+                        </div>
+                        <a-tag color="blue">VLESS</a-tag>
+                    </header>
+                    <div class="inbound-user-profile-traffic">
+                        <div>
+                            <span>本周期流量</span>
+                            <strong>[[ sizeFormat(userTrafficFor(user.id).up + userTrafficFor(user.id).down) ]]</strong>
+                        </div>
+                        <div>
+                            <span>统计状态</span>
+                            <strong>[[ userTrafficFor(user.id).hasData ? '已开始累计' : '暂未记录' ]]</strong>
+                        </div>
+                    </div>
+                    <dl class="inbound-user-connection-grid">
+                        <div class="inbound-user-connection-uuid">
+                            <dt>UUID</dt>
+                            <dd>[[ userProfileFor(user.id).uuid || user.id ]]</dd>
+                        </div>
+                    </dl>
+                </article>
+            </div>
+        </a-spin>
+    </section>
+
+    <details class="inbound-detail-advanced" aria-label="高级配置">
+        <summary>
+            <div>
+                <strong>高级配置</strong>
+                <small>监听地址、嗅探与周期设置</small>
+            </div>
+        </summary>
+        <div class="inbound-detail-config-grid">
+            <div>
+                <span>监听地址</span>
+                <strong>[[ listenAddress ]]</strong>
+            </div>
+            <div>
+                <span>嗅探</span>
+                <strong>[[ sniffingLabel ]]</strong>
+            </div>
+            <div>
+                <span>安全方式</span>
+                <strong>[[ securityLabel ]]</strong>
+            </div>
+            <div>
+                <span>每月重置日</span>
+                <strong>每月 [[ dbInbound.trafficResetDay || 1 ]] 日</strong>
+            </div>
+        </div>
+    </details>
+    <div class="inbound-detail-drawer-actions">
+        <a-button icon="team" @click="infoModal.manageUsers">用户与配置</a-button>
+        <a-button type="primary" icon="edit" @click="infoModal.editInbound">编辑配置</a-button>
+    </div>
+</a-drawer>
 <script>
 
     const infoModal = {
         visible: false,
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
-        show(dbInbound) {
+        userTraffic: [],
+        trafficLoading: false,
+        userProfiles: {},
+        profileLoading: false,
+        onUsers: null,
+        onEdit: null,
+        show({dbInbound, onUsers=null, onEdit=null}) {
             this.inbound = dbInbound.toInbound();
             this.dbInbound = new DBInbound(dbInbound);
+            this.onUsers = onUsers;
+            this.onEdit = onEdit;
             this.visible = true;
-
+            this.loadUserTraffic();
+            this.loadUserProfiles();
+        },
+        async loadUserTraffic() {
+            this.trafficLoading = true;
+            this.userTraffic = [];
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${this.dbInbound.id}/userTraffic`);
+                if (msg.success && Array.isArray(msg.obj)) {
+                    this.userTraffic = msg.obj;
+                }
+            } finally {
+                this.trafficLoading = false;
+            }
+        },
+        async loadUserProfiles() {
+            this.profileLoading = true;
+            this.userProfiles = {};
+            try {
+                const users = this.inbound.settings && Array.isArray(this.inbound.settings.vlesses) ? this.inbound.settings.vlesses : [];
+                const results = await Promise.all(users.map(async (user, index) => {
+                    const msg = await HttpUtil.post(`/xui/inbound/${this.dbInbound.id}/userProfile`, {
+                        clientId: user.id,
+                        host: location.hostname,
+                        name: this.dbInbound.userDisplayName(user, index),
+                    });
+                    return msg.success ? {clientId: user.id, connection: msg.obj.connection} : null;
+                }));
+                results.filter(Boolean).forEach(result => Vue.set(this.userProfiles, result.clientId, result.connection));
+            } finally {
+                this.profileLoading = false;
+            }
         },
         close() {
             infoModal.visible = false;
+            infoModal.onUsers = null;
+            infoModal.onEdit = null;
+        },
+        manageUsers() {
+            const handler = infoModal.onUsers;
+            infoModal.close();
+            if (typeof handler === 'function') handler();
+        },
+        editInbound() {
+            const handler = infoModal.onEdit;
+            infoModal.close();
+            if (typeof handler === 'function') handler();
         },
     };
 
@@ -31,7 +249,72 @@
             },
             get inbound() {
                 return this.infoModal.inbound;
-            }
+            },
+            get users() {
+                return this.inbound.settings && Array.isArray(this.inbound.settings.vlesses) ? this.inbound.settings.vlesses : [];
+            },
+            get listenAddress() {
+                const listen = String(this.inbound.listen || '').trim();
+                return listen && listen !== '0.0.0.0' ? listen : '所有 IP';
+            },
+            get connectionServer() {
+                return location.hostname;
+            },
+            get encryptionLabel() {
+                return (this.inbound.settings && this.inbound.settings.decryption) || 'none';
+            },
+            get networkLabel() {
+                return (this.inbound.stream && this.inbound.stream.network) || 'tcp';
+            },
+            get defaultFlow() {
+                const user = this.users[0];
+                return user && String(user.flow || '').trim();
+            },
+            get securityLabel() {
+                const security = this.inbound.stream && this.inbound.stream.security;
+                if (security === 'reality') return 'Reality';
+                if (security === 'tls') return 'TLS';
+                if (security === 'xtls') return 'XTLS';
+                return '未开启';
+            },
+            get isReality() {
+                return this.inbound.stream && this.inbound.stream.security === 'reality';
+            },
+            get realitySettings() {
+                return this.isReality && this.inbound.stream.reality ? this.inbound.stream.reality : {};
+            },
+            get realityServerName() {
+                const names = Array.isArray(this.realitySettings.serverNames) ? this.realitySettings.serverNames.filter(Boolean) : [];
+                return names.join('、') || '未设置';
+            },
+            get realityDest() {
+                return String(this.realitySettings.dest || '').trim() || '未设置';
+            },
+            get realityFingerprint() {
+                return String(this.realitySettings.clientFingerprint || '').trim() || 'chrome';
+            },
+            get realityShortIds() {
+                const shortIds = Array.isArray(this.realitySettings.shortIds) ? this.realitySettings.shortIds.filter(Boolean) : [];
+                return shortIds.join('、') || '未设置';
+            },
+            get realityPublicKey() {
+                const user = this.users[0];
+                const profile = user ? this.infoModal.userProfiles[user.id] : null;
+                return profile && profile.realityPublicKey ? profile.realityPublicKey : '加载中';
+            },
+            get sniffingLabel() {
+                return this.inbound.sniffing && this.inbound.sniffing.enabled ? '已启用' : '未启用';
+            },
+            moment,
+            sizeFormat,
+        },
+        methods: {
+            userTrafficFor(clientId) {
+                return this.infoModal.userTraffic.find(item => item.clientId === clientId) || {up: 0, down: 0, hasData: false};
+            },
+            userProfileFor(clientId) {
+                return this.infoModal.userProfiles[clientId] || {udp: true};
+            },
         },
     });
 

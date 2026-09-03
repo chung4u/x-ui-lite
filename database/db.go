@@ -34,7 +34,7 @@ func initUser() error {
 }
 
 func initInbound() error {
-	return db.AutoMigrate(&model.Inbound{})
+	return db.AutoMigrate(&model.Inbound{}, &model.InboundUserTraffic{}, &model.InboundSubscription{})
 }
 
 func initSetting() error {

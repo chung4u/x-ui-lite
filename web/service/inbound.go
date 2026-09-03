@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"time"
 	"x-ui/database"
 	"x-ui/database/model"
@@ -115,7 +116,15 @@ func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 
 func (s *InboundService) DelInbound(id int) error {
 	db := database.GetDB()
-	return db.Delete(model.Inbound{}, id).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("inbound_id = ?", id).Delete(&model.InboundUserTraffic{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("inbound_id = ?", id).Delete(&model.InboundSubscription{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(model.Inbound{}, id).Error
+	})
 }
 
 func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
@@ -126,6 +135,12 @@ func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
 		return nil, err
 	}
 	return inbound, nil
+}
+
+func (s *InboundService) GetInboundUserTraffic(inboundID int) ([]*model.InboundUserTraffic, error) {
+	traffics := []*model.InboundUserTraffic{}
+	err := database.GetDB().Where("inbound_id = ?", inboundID).Find(&traffics).Error
+	return traffics, err
 }
 
 func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
@@ -142,11 +157,12 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
 		return err
 	}
 	oldTraffic := oldInbound.Up + oldInbound.Down
+	manualTrafficReset := inbound.Up+inbound.Down < oldTraffic
 	oldInbound.Up = inbound.Up
 	oldInbound.Down = inbound.Down
 	oldInbound.Total = inbound.Total
 	oldInbound.Remark = inbound.Remark
-	if inbound.Up+inbound.Down < oldTraffic || inbound.Enable != oldInbound.Enable {
+	if manualTrafficReset || inbound.Enable != oldInbound.Enable {
 		oldInbound.TrafficExhausted = false
 	}
 	oldInbound.Enable = inbound.Enable
@@ -160,7 +176,16 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
 	oldInbound.Tag = fmt.Sprintf("inbound-%v", inbound.Port)
 
 	db := database.GetDB()
-	return db.Save(oldInbound).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(oldInbound).Error; err != nil {
+			return err
+		}
+		if manualTrafficReset {
+			return tx.Model(&model.InboundUserTraffic{}).Where("inbound_id = ?", oldInbound.Id).
+				Updates(map[string]interface{}{"up": 0, "down": 0}).Error
+		}
+		return nil
+	})
 }
 
 func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {
@@ -168,7 +193,6 @@ func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {
 		return nil
 	}
 	db := database.GetDB()
-	db = db.Model(model.Inbound{})
 	tx := db.Begin()
 	defer func() {
 		if err != nil {
@@ -179,10 +203,36 @@ func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {
 	}()
 	for _, traffic := range traffics {
 		if traffic.IsInbound {
-			err = tx.Where("tag = ?", traffic.Tag).
+			err = tx.Model(&model.Inbound{}).Where("tag = ?", traffic.Tag).
 				UpdateColumn("up", gorm.Expr("up + ?", traffic.Up)).
 				UpdateColumn("down", gorm.Expr("down + ?", traffic.Down)).
 				Error
+			if err != nil {
+				return
+			}
+		}
+		if traffic.IsUser && traffic.UserTag != "" && traffic.ClientID != "" && (traffic.Up != 0 || traffic.Down != 0) {
+			var inbound model.Inbound
+			err = tx.Where("tag = ?", traffic.UserTag).First(&inbound).Error
+			if err != nil {
+				if err == gorm.ErrRecordNotFound {
+					err = nil
+					continue
+				}
+				return
+			}
+			err = tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "inbound_id"}, {Name: "client_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"up":   gorm.Expr("up + ?", traffic.Up),
+					"down": gorm.Expr("down + ?", traffic.Down),
+				}),
+			}).Create(&model.InboundUserTraffic{
+				InboundId: inbound.Id,
+				ClientId:  traffic.ClientID,
+				Up:        traffic.Up,
+				Down:      traffic.Down,
+			}).Error
 			if err != nil {
 				return
 			}
@@ -256,6 +306,16 @@ func (s *InboundService) SyncMonthlyTrafficPeriod(now time.Time) (needsXrayResta
 		}
 		if err = tx.Model(model.Inbound{}).Where("id = ?", inbound.Id).Updates(updates).Error; err != nil {
 			return needsXrayRestart, err
+		}
+		userUpdates := map[string]interface{}{}
+		if action == inboundTrafficPeriodReset {
+			userUpdates["up"] = 0
+			userUpdates["down"] = 0
+		}
+		if len(userUpdates) > 0 {
+			if err = tx.Model(&model.InboundUserTraffic{}).Where("inbound_id = ?", inbound.Id).Updates(userUpdates).Error; err != nil {
+				return needsXrayRestart, err
+			}
 		}
 	}
 	return needsXrayRestart, nil

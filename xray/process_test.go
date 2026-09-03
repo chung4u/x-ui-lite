@@ -43,3 +43,11 @@ func TestParseTrafficName(t *testing.T) {
 		})
 	}
 }
+
+func TestParseUserTrafficName(t *testing.T) {
+	name := "user>>>" + userTrafficEmail("inbound-2443", "11111111-1111-1111-1111-111111111111") + ">>>traffic>>>uplink"
+	tag, clientID, down, ok := parseUserTrafficName(name)
+	if !ok || tag != "inbound-2443" || clientID != "11111111-1111-1111-1111-111111111111" || down {
+		t.Fatalf("parseUserTrafficName(%q) = (%q, %q, %v, %v)", name, tag, clientID, down, ok)
+	}
+}

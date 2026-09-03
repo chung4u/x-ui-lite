@@ -46,5 +46,8 @@ func IsDebug() bool {
 }
 
 func GetDBPath() string {
+	if dbPath := strings.TrimSpace(os.Getenv("XUI_DB_PATH")); dbPath != "" {
+		return dbPath
+	}
 	return fmt.Sprintf("/etc/%s/%s.db", GetName(), GetName())
 }

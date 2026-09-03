@@ -14,21 +14,18 @@
                                 <div class="page-eyebrow">Overview</div>
                                 <h1 class="page-title">系统状态</h1>
                             </div>
-                            <div class="page-actions">
-                                <a-button class="icon-button" icon="sync" :loading="refreshing"
-                                          aria-label="立即刷新系统状态" @click="getStatus(true)"></a-button>
+                            <div class="page-actions" aria-live="polite">
+                                <div v-if="healthIsHealthy" class="system-status-healthy">
+                                    <i aria-hidden="true"></i>
+                                    <span>运行正常</span>
+                                </div>
                             </div>
                         </header>
                     </transition>
 
                     <transition name="list" appear>
-                        <section class="health-banner" :class="[healthState, { 'health-banner-compact': healthIsHealthy }]"
+                        <section v-if="!healthIsHealthy" class="health-banner" :class="healthState"
                                  aria-live="polite" aria-label="运行健康监控">
-                            <div class="health-healthy-state" v-if="healthIsHealthy">
-                                <i aria-hidden="true"></i>
-                                <strong>运行正常</strong>
-                            </div>
-                            <template v-else>
                             <div class="health-banner-top">
                                 <div class="health-banner-main">
                                     <div class="health-banner-icon">
@@ -40,7 +37,6 @@
                                         <p v-if="healthSummary">[[ healthSummary ]]</p>
                                     </div>
                                 </div>
-                                <a-button v-if="statusFetchFailed" icon="sync" @click="getStatus(true)">重新检查</a-button>
                             </div>
                             <div class="health-issue-list" v-if="!statusFetchFailed && healthIssues.length > 0">
                                 <div class="health-issue-item" v-for="issue in healthIssues" :key="issue.key"
@@ -57,7 +53,6 @@
                                     <span class="health-issue-action" v-if="issue.href">查看详情 <a-icon type="right"></a-icon></span>
                                 </div>
                             </div>
-                            </template>
                         </section>
                     </transition>
 
@@ -452,7 +447,6 @@
             versionModal,
             spinning: false,
             loadingTip: '加载中',
-            refreshing: false,
             statusRequestInFlight: false,
             hasStatusLoaded: false,
             statusFetchFailed: false,
@@ -476,14 +470,11 @@
                 this.spinning = spinning;
                 this.loadingTip = tip;
             },
-            async getStatus(manual = false) {
+            async getStatus() {
                 if (this.statusRequestInFlight) {
                     return;
                 }
                 this.statusRequestInFlight = true;
-                if (manual) {
-                    this.refreshing = true;
-                }
                 try {
                     const msg = await HttpUtil.post('/server/status');
                     if (msg.success) {
@@ -498,7 +489,6 @@
                     throw e;
                 } finally {
                     this.statusRequestInFlight = false;
-                    this.refreshing = false;
                 }
             },
             setStatus(data) {
@@ -646,7 +636,7 @@
                             if (msg.success) {
                                 versionModal.hide();
                                 await PromiseUtil.sleep(1000);
-                                await this.getStatus(true);
+                                await this.getStatus();
                             }
                         } finally {
                             versionModal.installingVersion = '';

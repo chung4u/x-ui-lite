@@ -1,18 +1,6 @@
 {{define "form/tlsSettings"}}
-<!-- tls enable -->
-<a-form layout="inline" v-if="inbound.canSetTls()">
-    <a-form-item label="tls">
-        <a-switch v-model="inbound.tls">
-        </a-switch>
-    </a-form-item>
-    <a-form-item v-if="inbound.canEnableXTls()" label="xtls">
-        <a-switch v-model="inbound.xtls"></a-switch>
-    </a-form-item>
-</a-form>
-
 <!-- tls settings -->
-<a-form v-if="inbound.tls || inbound.xtls"
-        layout="inline">
+<a-form layout="inline">
     <a-form-item label="域名">
         <a-input v-model.trim="inbound.stream.tls.server"></a-input>
     </a-form-item>

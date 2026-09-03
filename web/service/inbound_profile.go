@@ -17,9 +17,29 @@ import (
 )
 
 type VLESSUserProfile struct {
-	Link             string `json:"link"`
-	ClashVergeConfig string `json:"clashVergeConfig"`
-	FileName         string `json:"fileName"`
+	Link             string                 `json:"link"`
+	ClashVergeConfig string                 `json:"clashVergeConfig"`
+	FileName         string                 `json:"fileName"`
+	Connection       VLESSConnectionDetails `json:"connection"`
+}
+
+// VLESSConnectionDetails contains only client-side connection fields. It is
+// returned to the authenticated inbound owner so the panel can show the same
+// values that are written to the downloadable Clash Verge profile.
+type VLESSConnectionDetails struct {
+	Name              string `json:"name"`
+	Type              string `json:"type"`
+	Server            string `json:"server"`
+	Port              int    `json:"port"`
+	UUID              string `json:"uuid"`
+	Encryption        string `json:"encryption"`
+	Network           string `json:"network"`
+	UDP               bool   `json:"udp"`
+	TLS               bool   `json:"tls"`
+	ServerName        string `json:"serverName"`
+	Flow              string `json:"flow"`
+	ClientFingerprint string `json:"clientFingerprint"`
+	RealityPublicKey  string `json:"realityPublicKey"`
 }
 
 type vlessInboundSettings struct {
@@ -39,9 +59,10 @@ type vlessStreamSettings struct {
 		ServerName string `json:"serverName"`
 	} `json:"tlsSettings"`
 	RealitySettings struct {
-		ServerNames []string `json:"serverNames"`
-		PrivateKey  string   `json:"privateKey"`
-		ShortIDs    []string `json:"shortIds"`
+		ServerNames       []string `json:"serverNames"`
+		PrivateKey        string   `json:"privateKey"`
+		ShortIDs          []string `json:"shortIds"`
+		ClientFingerprint string   `json:"clientFingerprint"`
 	} `json:"realitySettings"`
 	WSSettings struct {
 		Path    string            `json:"path"`
@@ -117,6 +138,10 @@ func (s *InboundService) GetVLESSUserProfile(inboundID int, userID int, clientID
 	if inbound.UserId != userID {
 		return nil, common.NewError("无权访问该入站")
 	}
+	return buildVLESSUserProfile(inbound, clientID, host, requestedName)
+}
+
+func buildVLESSUserProfile(inbound *model.Inbound, clientID string, host string, requestedName string) (*VLESSUserProfile, error) {
 	if inbound.Protocol != model.VLESS {
 		return nil, common.NewError("仅支持 VLESS 入站")
 	}
@@ -179,7 +204,29 @@ func (s *InboundService) GetVLESSUserProfile(inboundID int, userID int, clientID
 		Link:             link,
 		ClashVergeConfig: string(content),
 		FileName:         safeProfileFileName(name) + ".yaml",
+		Connection:       connectionDetailsFromProxy(proxy),
 	}, nil
+}
+
+func connectionDetailsFromProxy(proxy clashVLESSProxy) VLESSConnectionDetails {
+	details := VLESSConnectionDetails{
+		Name:              proxy.Name,
+		Type:              proxy.Type,
+		Server:            proxy.Server,
+		Port:              proxy.Port,
+		UUID:              proxy.UUID,
+		Encryption:        proxy.Encryption,
+		Network:           proxy.Network,
+		UDP:               proxy.UDP,
+		TLS:               proxy.TLS,
+		ServerName:        proxy.ServerName,
+		Flow:              proxy.Flow,
+		ClientFingerprint: proxy.ClientFingerprint,
+	}
+	if proxy.RealityOpts != nil {
+		details.RealityPublicKey = proxy.RealityOpts.PublicKey
+	}
+	return details
 }
 
 func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, stream vlessStreamSettings, server string, name string) (string, clashVLESSProxy, error) {
@@ -213,11 +260,15 @@ func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, strea
 		shortID := firstNonEmpty(stream.RealitySettings.ShortIDs)
 		proxy.TLS = true
 		proxy.ServerName = serverName
-		proxy.ClientFingerprint = "chrome"
+		fingerprint := strings.TrimSpace(stream.RealitySettings.ClientFingerprint)
+		if fingerprint == "" {
+			fingerprint = "chrome"
+		}
+		proxy.ClientFingerprint = fingerprint
 		proxy.RealityOpts = &clashRealityOpts{PublicKey: publicKey, ShortID: shortID}
 		params.Set("security", "reality")
 		params.Set("pbk", publicKey)
-		params.Set("fp", "chrome")
+		params.Set("fp", fingerprint)
 		if serverName != "" {
 			params.Set("sni", serverName)
 		}

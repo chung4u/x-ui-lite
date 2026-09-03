@@ -1,0 +1,80 @@
+{{define "form/realitySettings"}}
+<a-alert class="reality-settings-notice" type="info" show-icon
+         message="REALITY 会模拟与目标站点的 TLS 握手"
+         description="伪装站点、SNI 和握手目标应对应同一个可正常访问的 TLS 服务。私钥只用于服务端，客户端将使用自动推导的公钥。"></a-alert>
+
+<div class="reality-settings-layout">
+    <section class="reality-settings-group">
+        <div class="reality-settings-group-head">
+            <strong>伪装配置</strong>
+            <span>从预设的知名站点中选择，自动匹配 SNI 与握手目标</span>
+        </div>
+        <a-form class="reality-settings-grid" layout="vertical">
+            <a-form-item label="伪装站点 / Server Name" required>
+                <a-select v-model="selectedRealitySite" aria-label="选择 REALITY 伪装站点">
+                    <a-select-option v-for="site in realitySiteOptions" :key="site.value" :value="site.value">
+                        [[ site.label ]] · [[ site.serverName ]]
+                    </a-select-option>
+                </a-select>
+            </a-form-item>
+            <a-form-item label="握手目标（自动配置）" required>
+                <a-input :value="realitySettings.dest" disabled aria-label="REALITY 握手目标"></a-input>
+            </a-form-item>
+        </a-form>
+    </section>
+
+    <section class="reality-settings-group">
+        <div class="reality-settings-group-head">
+            <strong>客户端特征</strong>
+            <span>写入 Clash Verge 与 VLESS 链接</span>
+        </div>
+        <a-form class="reality-settings-grid" layout="vertical">
+            <a-form-item label="Client Fingerprint" required>
+                <a-select v-model="realitySettings.clientFingerprint">
+                    <a-select-option value="chrome">chrome</a-select-option>
+                    <a-select-option value="firefox">firefox</a-select-option>
+                    <a-select-option value="safari">safari</a-select-option>
+                    <a-select-option value="edge">edge</a-select-option>
+                    <a-select-option value="ios">ios</a-select-option>
+                    <a-select-option value="android">android</a-select-option>
+                </a-select>
+            </a-form-item>
+            <a-form-item label="Flow">
+                <a-select v-model="realityFlow" placeholder="可选">
+                    <a-select-option value="">不设置</a-select-option>
+                    <a-select-option v-for="key in FLOW_CONTROL" :key="key" :value="key">[[ key ]]</a-select-option>
+                </a-select>
+            </a-form-item>
+        </a-form>
+    </section>
+
+    <section class="reality-settings-group">
+        <div class="reality-settings-group-head">
+            <strong>REALITY 握手配置</strong>
+            <span>密钥只保存在当前入站配置中</span>
+        </div>
+        <a-form class="reality-settings-grid" layout="vertical">
+            <a-form-item class="reality-settings-key-field" label="私钥" required>
+                <a-input v-model.trim="realitySettings.privateKey" type="password" autocomplete="new-password" placeholder="使用生成按钮或粘贴 X25519 私钥"></a-input>
+                <div class="reality-key-actions">
+                    <a-button size="small" icon="key" :loading="inModal.realityKeyLoading" @click="generateRealityKey">生成密钥</a-button>
+                    <a-button size="small" :loading="inModal.realityKeyLoading" :disabled="!realitySettings.privateKey" @click="deriveRealityPublicKey">查看公钥</a-button>
+                </div>
+                <div v-if="inModal.realityPublicKey" class="reality-public-key">
+                    <span>客户端公钥</span>
+                    <code>[[ inModal.realityPublicKey ]]</code>
+                </div>
+            </a-form-item>
+            <a-form-item label="Short ID（可选）">
+                <a-input v-model.trim="realitySettings.shortIds[0]" placeholder="可留空；填写时为 1–16 位十六进制，例如：a1b2c3d4"></a-input>
+                <div class="reality-key-actions">
+                    <a-button size="small" icon="reload" :loading="inModal.realityShortIDLoading" @click="generateRealityShortID">随机生成</a-button>
+                </div>
+            </a-form-item>
+            <a-form-item label="握手版本（xver）">
+                <a-input-number v-model.number="realitySettings.xver" :min="0" :max="2"></a-input-number>
+            </a-form-item>
+        </a-form>
+    </section>
+</div>
+{{end}}

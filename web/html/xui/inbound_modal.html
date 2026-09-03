@@ -19,6 +19,16 @@
 </a-modal>
 <script>
 
+    const realitySiteOptions = Object.freeze([
+        {value: 'microsoft', label: 'Microsoft', serverName: 'www.microsoft.com', dest: 'www.microsoft.com:443'},
+        {value: 'apple', label: 'Apple', serverName: 'www.apple.com', dest: 'www.apple.com:443'},
+        {value: 'cloudflare', label: 'Cloudflare', serverName: 'www.cloudflare.com', dest: 'www.cloudflare.com:443'},
+        {value: 'speedtest', label: 'Speedtest', serverName: 'www.speedtest.net', dest: 'www.speedtest.net:443'},
+        {value: 'bing', label: 'Bing', serverName: 'www.bing.com', dest: 'www.bing.com:443'},
+    ]);
+
+    const defaultRealitySite = realitySiteOptions[0];
+
     const inModal = {
         title: '',
         visible: false,
@@ -31,6 +41,42 @@
         usedPorts: [],
         baseline: '',
         validationError: '',
+        realityPublicKey: '',
+        realityKeyLoading: false,
+        realityShortIDLoading: false,
+        ensureRealitySettings() {
+            const stream = this.inbound.stream;
+            if (!stream.reality || typeof stream.reality !== 'object') {
+                stream.reality = {
+                    show: false,
+                    dest: defaultRealitySite.dest,
+                    xver: 0,
+                    serverNames: [defaultRealitySite.serverName],
+                    privateKey: '',
+                    minClientVer: '',
+                    maxClientVer: '',
+                    maxTimeDiff: 0,
+                    shortIds: [''],
+                    clientFingerprint: 'chrome',
+                };
+            }
+            if (!Array.isArray(stream.reality.serverNames) || stream.reality.serverNames.length === 0) {
+                Vue.set(stream.reality, 'serverNames', ['']);
+            }
+            if (!Array.isArray(stream.reality.shortIds) || stream.reality.shortIds.length === 0) {
+                Vue.set(stream.reality, 'shortIds', ['']);
+            }
+            if (!stream.reality.clientFingerprint) {
+                Vue.set(stream.reality, 'clientFingerprint', 'chrome');
+            }
+            return stream.reality;
+        },
+        applyRealitySite(site) {
+            if (!site) return;
+            const reality = this.ensureRealitySettings();
+            Vue.set(reality, 'serverNames', [site.serverName]);
+            Vue.set(reality, 'dest', site.dest);
+        },
         currentState() {
             return {
                 base: {
@@ -80,7 +126,22 @@
             if (!Number.isFinite(Number(this.dbInbound.totalGB)) || Number(this.dbInbound.totalGB) < 0) {
                 return '月度流量限额不能小于 0。';
             }
+            if (this.inbound.stream.security === 'reality') {
+                const reality = this.inbound.stream.reality || {};
+                const serverName = Array.isArray(reality.serverNames) ? String(reality.serverNames[0] || '').trim() : '';
+                const shortID = Array.isArray(reality.shortIds) ? String(reality.shortIds[0] || '').trim() : '';
+                const isPresetSite = realitySiteOptions.some(site => site.serverName === serverName && site.dest === String(reality.dest || '').trim());
+                if (!isPresetSite) return '请选择预设的 REALITY 伪装站点。';
+                if (!String(reality.privateKey || '').trim()) return '请生成或填写 REALITY 私钥。';
+                if (shortID && !/^[0-9a-fA-F]{1,16}$/.test(shortID)) return 'Short ID 需为 1–16 位十六进制字符。';
+            }
             return '';
+        },
+        normalizeRealityShortID() {
+            if (this.inbound.stream.security !== 'reality') return;
+            const reality = this.inbound.stream.reality || {};
+            const shortID = Array.isArray(reality.shortIds) ? String(reality.shortIds[0] || '').trim() : '';
+            Vue.set(reality, 'shortIds', shortID ? [shortID] : []);
         },
         ok() {
             inModal.validationError = inModal.validate();
@@ -91,6 +152,7 @@
                 });
                 return;
             }
+            inModal.normalizeRealityShortID();
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
         show({ title='', okText='确定', inbound=null, dbInbound=null, editingId=0, usedPorts=[], confirm=(inbound, dbInbound)=>{} }) {
@@ -101,6 +163,9 @@
             } else {
                 this.inbound = new Inbound();
             }
+            if (this.inbound.stream.security === 'reality') {
+                this.ensureRealitySettings();
+            }
             if (dbInbound) {
                 this.dbInbound = new DBInbound(dbInbound);
             } else {
@@ -110,6 +175,9 @@
             this.usedPorts = usedPorts.map(port => Number(port));
             this.confirm = confirm;
             this.validationError = '';
+            this.realityPublicKey = '';
+            this.realityKeyLoading = false;
+            this.realityShortIDLoading = false;
             this.visible = true;
             this.baseline = this.stateSignature();
             window.setTimeout(() => {
@@ -122,6 +190,9 @@
             this.loading(false);
             this.validationError = '';
             this.baseline = '';
+            this.realityPublicKey = '';
+            this.realityKeyLoading = false;
+            this.realityShortIDLoading = false;
         },
         requestClose() {
             if (!inModal.isDirty()) {
@@ -151,6 +222,7 @@
             inModal: inModal,
             Protocols: protocols,
             SSMethods: SSMethods,
+            realitySiteOptions,
             get inbound() {
                 return inModal.inbound;
             },
@@ -165,11 +237,83 @@
             changeSummary() {
                 return inModal.changeSummary();
             },
+            realitySettings() {
+                return inModal.inbound.stream.reality || {};
+            },
+            selectedRealitySite: {
+                get() {
+                    const reality = this.realitySettings;
+                    const serverName = Array.isArray(reality.serverNames) ? String(reality.serverNames[0] || '').trim() : '';
+                    const dest = String(reality.dest || '').trim();
+                    const site = realitySiteOptions.find(option => option.serverName === serverName && option.dest === dest);
+                    return site ? site.value : undefined;
+                },
+                set(value) {
+                    const site = realitySiteOptions.find(option => option.value === value);
+                    inModal.applyRealitySite(site);
+                },
+            },
+            realityFlow: {
+                get() {
+                    const users = inModal.inbound.settings && inModal.inbound.settings.vlesses;
+                    return users && users[0] ? users[0].flow : '';
+                },
+                set(value) {
+                    const users = inModal.inbound.settings && inModal.inbound.settings.vlesses;
+                    if (!Array.isArray(users)) return;
+                    users.forEach(user => { user.flow = value; });
+                },
+            },
         },
         methods: {
             streamNetworkChange(oldValue) {
                 if (oldValue === 'kcp') {
                     this.inModal.inbound.tls = false;
+                }
+            },
+            ensureRealitySettings() {
+                return inModal.ensureRealitySettings();
+            },
+            securityModeChange(mode) {
+                const stream = this.inModal.inbound.stream;
+                if (mode === 'reality') {
+                    this.ensureRealitySettings();
+                    stream.network = 'tcp';
+                }
+                stream.security = mode;
+            },
+            async getRealityKey(privateKey = '') {
+                this.inModal.realityKeyLoading = true;
+                try {
+                    const msg = await HttpUtil.post('/xui/inbound/realityKey', {privateKey});
+                    if (!msg.success) return null;
+                    this.inModal.realityPublicKey = msg.obj.publicKey || '';
+                    return msg.obj;
+                } finally {
+                    this.inModal.realityKeyLoading = false;
+                }
+            },
+            async generateRealityKey() {
+                const pair = await this.getRealityKey();
+                if (!pair) return;
+                this.ensureRealitySettings().privateKey = pair.privateKey;
+                this.$message.success('已生成 REALITY 密钥对');
+            },
+            async deriveRealityPublicKey() {
+                const reality = this.ensureRealitySettings();
+                const pair = await this.getRealityKey(reality.privateKey);
+                if (!pair) return;
+                this.$message.success('已更新客户端公钥');
+            },
+            async generateRealityShortID() {
+                this.inModal.realityShortIDLoading = true;
+                try {
+                    const msg = await HttpUtil.post('/xui/inbound/realityShortID');
+                    if (!msg.success || !msg.obj || !msg.obj.shortId) return;
+                    Vue.set(this.ensureRealitySettings(), 'shortIds', [msg.obj.shortId]);
+                    this.$message.success('已生成 Short ID');
+                } finally {
+                    this.inModal.realityShortIDLoading = false;
                 }
             }
         },

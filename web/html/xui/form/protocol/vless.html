@@ -12,7 +12,7 @@
             <a-form-item label="UUID">
                 <a-input v-model.trim="user.id"></a-input>
             </a-form-item>
-            <a-form-item v-if="inbound.xtls" label="flow">
+            <a-form-item v-if="inbound.xtls || inbound.stream.security === 'reality'" label="flow">
                 <a-select v-model="user.flow" style="width: 150px">
                     <a-select-option value="">无</a-select-option>
                     <a-select-option v-for="key in FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>

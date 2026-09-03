@@ -3,7 +3,9 @@ package controller
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"net/url"
 	"strconv"
+	"strings"
 	"x-ui/database/model"
 	"x-ui/logger"
 	"x-ui/web/global"
@@ -12,8 +14,8 @@ import (
 )
 
 type InboundController struct {
-	inboundService service.InboundService
-	xrayService    service.XrayService
+	inboundService  service.InboundService
+	xrayService     service.XrayService
 	firewallService service.FirewallService
 }
 
@@ -21,6 +23,14 @@ type inboundUserProfileForm struct {
 	ClientID string `json:"clientId" form:"clientId"`
 	Host     string `json:"host" form:"host"`
 	Name     string `json:"name" form:"name"`
+}
+
+type realityKeyForm struct {
+	PrivateKey string `json:"privateKey" form:"privateKey"`
+}
+
+type inboundUserSubscription struct {
+	URL string `json:"url"`
 }
 
 func NewInboundController(g *gin.RouterGroup) *InboundController {
@@ -40,6 +50,30 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
 	g.POST("/:id/userProfile", a.getUserProfile)
+	g.POST("/:id/userSubscription", a.getUserSubscription)
+	g.POST("/:id/userTraffic", a.getUserTraffic)
+	g.POST("/realityKey", a.getRealityKey)
+	g.POST("/realityShortID", a.getRealityShortID)
+}
+
+func (a *InboundController) getRealityKey(c *gin.Context) {
+	form := &realityKeyForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	if form.PrivateKey == "" {
+		pair, err := service.GenerateRealityKeyPair()
+		jsonObj(c, pair, err)
+		return
+	}
+	pair, err := service.GetRealityPublicKey(form.PrivateKey)
+	jsonObj(c, pair, err)
+}
+
+func (a *InboundController) getRealityShortID(c *gin.Context) {
+	shortID, err := service.GenerateRealityShortID()
+	jsonObj(c, shortID, err)
 }
 
 func (a *InboundController) getFirewallPortStatus(c *gin.Context) {
@@ -159,4 +193,52 @@ func (a *InboundController) getUserProfile(c *gin.Context) {
 	user := session.GetLoginUser(c)
 	profile, err := a.inboundService.GetVLESSUserProfile(id, user.Id, form.ClientID, form.Host, form.Name)
 	jsonObj(c, profile, err)
+}
+
+func (a *InboundController) getUserSubscription(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonObj(c, nil, fmt.Errorf("入站编号格式不正确"))
+		return
+	}
+	form := &inboundUserProfileForm{}
+	if err = c.ShouldBind(form); err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	user := session.GetLoginUser(c)
+	token, err := a.inboundService.GetOrCreateVLESSUserSubscriptionToken(id, user.Id, form.ClientID)
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	jsonObj(c, &inboundUserSubscription{URL: subscriptionURL(c, token)}, nil)
+}
+
+func subscriptionURL(c *gin.Context, token string) string {
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Request.Host + c.GetString("base_path") + "sub/" + url.PathEscape(token)
+}
+
+func (a *InboundController) getUserTraffic(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		jsonObj(c, nil, fmt.Errorf("入站编号格式不正确"))
+		return
+	}
+	user := session.GetLoginUser(c)
+	inbound, err := a.inboundService.GetInbound(id)
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	if inbound.UserId != user.Id {
+		jsonObj(c, nil, fmt.Errorf("无权访问该入站"))
+		return
+	}
+	traffics, err := a.inboundService.GetInboundUserTraffic(id)
+	jsonObj(c, traffics, err)
 }

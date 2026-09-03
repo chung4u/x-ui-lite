@@ -31,43 +31,43 @@
                     <transition name="list" appear>
                         <section class="inbound-summary-grid" aria-label="流量概览">
                             <a-row :gutter="16" type="flex">
-                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :lg="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon"><a-icon type="cloud-upload"></a-icon></div>
+                                        <div class="overview-icon"><a-icon type="cluster"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">上传</div>
-                                            <div class="overview-value">[[ sizeFormat(total.up) ]]</div>
-                                            <div class="overview-meta">全部入站 · 每月 [[ trafficResetDay ]] 日重置</div>
+                                            <div class="overview-label">已启用入站</div>
+                                            <div class="overview-value">[[ enabledCount ]]</div>
+                                            <div class="overview-meta">共 [[ dbInbounds.length ]] 条配置</div>
                                         </div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :lg="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon violet"><a-icon type="cloud-download"></a-icon></div>
+                                        <div class="overview-icon violet"><a-icon type="team"></a-icon></div>
                                         <div class="overview-content">
-                                            <div class="overview-label">下载</div>
-                                            <div class="overview-value">[[ sizeFormat(total.down) ]]</div>
-                                            <div class="overview-meta">全部入站 · 每月 [[ trafficResetDay ]] 日重置</div>
+                                            <div class="overview-label">已配置用户</div>
+                                            <div class="overview-value">[[ totalUserCount ]]</div>
+                                            <div class="overview-meta">VLESS 用户总数</div>
                                         </div>
                                     </a-card>
                                 </a-col>
-                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
-                                    <a-card class="overview-card" hoverable>
-                                        <div class="overview-icon success"><a-icon type="bar-chart"></a-icon></div>
-                                        <div class="overview-content">
-                                            <div class="overview-label">总流量</div>
-                                            <div class="overview-value">[[ sizeFormat(total.up + total.down) ]]</div>
-                                            <div class="overview-meta">上传与下载合计</div>
-                                        </div>
-                                    </a-card>
+                                <a-col :xs="12" :sm="12" :lg="6" style="margin-bottom: 16px">
+                                    <a-card class="overview-card" hoverable @click="filters.quick = 'attention'">
+                                            <div class="overview-icon" :class="{ warning: attentionCount > 0, success: attentionCount === 0 }"><a-icon type="bell"></a-icon></div>
+                                            <div class="overview-content">
+                                                <div class="overview-label">需要关注</div>
+                                                <div class="overview-value">[[ attentionCount ]]</div>
+                                                <div class="overview-meta">点击查看异常入站</div>
+                                            </div>
+                                        </a-card>
                                 </a-col>
-                                <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
+                                <a-col :xs="12" :sm="12" :lg="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
                                             <div class="overview-icon warning"><a-icon type="cluster"></a-icon></div>
                                             <div class="overview-content">
-                                                <div class="overview-label">入站数量</div>
-                                                <div class="overview-value">[[ dbInbounds.length ]]</div>
-                                                <div class="overview-meta">[[ enabledCount ]] 条已启用</div>
+                                                <div class="overview-label">本周期流量</div>
+                                                <div class="overview-value">[[ sizeFormat(total.up + total.down) ]]</div>
+                                                <div class="overview-meta">每月 [[ trafficResetDay ]] 日重置</div>
                                             </div>
                                         </a-card>
                                 </a-col>
@@ -83,9 +83,17 @@
                                     <div class="table-toolbar-copy">[[ filteredSummary ]]</div>
                                 </div>
                                 <div class="table-toolbar-actions">
-                                    <a-button type="link" @click="showStreamColumn = !showStreamColumn">
-                                        [[ showStreamColumn ? '隐藏传输配置' : '显示传输配置' ]]
-                                    </a-button>
+                                    <a-dropdown v-if="selectedInboundIds.length > 0" :trigger="['click']">
+                                        <a-button :loading="batchPending">
+                                            已选 [[ selectedInboundIds.length ]] 条 <a-icon type="down"></a-icon>
+                                        </a-button>
+                                        <a-menu slot="overlay" @click="clickBatchAction">
+                                            <a-menu-item key="enable"><a-icon type="check-circle"></a-icon>批量启用</a-menu-item>
+                                            <a-menu-item key="disable"><a-icon type="pause-circle"></a-icon>批量停用</a-menu-item>
+                                            <a-menu-divider></a-menu-divider>
+                                            <a-menu-item key="resetTraffic"><a-icon type="retweet"></a-icon>批量重置流量</a-menu-item>
+                                        </a-menu>
+                                    </a-dropdown>
                                     <a-button v-if="hasActiveFilters" icon="undo" @click="resetFilters">重置筛选</a-button>
                                 </div>
                             </div>
@@ -129,8 +137,22 @@
                             <div class="desktop-inbound-table">
                                 <a-table :columns="displayColumns" :row-key="dbInbound => dbInbound.id"
                                          :data-source="displayedInbounds" :loading="refreshing"
-                                         :scroll="{ x: showStreamColumn ? 1190 : 1030 }" :pagination="false"
+                                         :scroll="{ x: 1030 }" :pagination="false"
+                                         :row-selection="rowSelection" :custom-row="inboundRow"
                                          :locale="{ emptyText: emptyStateText }">
+                                    <template slot="inbound" slot-scope="text, dbInbound">
+                                        <div class="inbound-name-cell">
+                                            <strong>[[ dbInbound.remark || '未命名入站' ]]</strong>
+                                            <span>端口 [[ dbInbound.port ]] · # [[ dbInbound.id ]]</span>
+                                        </div>
+                                    </template>
+                                    <template slot="users" slot-scope="text, dbInbound">
+                                        <button class="user-count-cell" type="button" @click.stop="openUsers(dbInbound)">
+                                            <a-icon type="team"></a-icon>
+                                            <strong>[[ userCount(dbInbound) ]]</strong>
+                                            <span>管理用户</span>
+                                        </button>
+                                    </template>
                                     <template slot="action" slot-scope="text, dbInbound">
                                         <a-dropdown :trigger="['click']">
                                             <a-button size="small" :loading="isPending(dbInbound.id)"
@@ -138,9 +160,6 @@
                                                 管理 <a-icon type="down"></a-icon>
                                             </a-button>
                                             <a-menu slot="overlay" @click="a => clickAction(a, dbInbound)">
-                                                <a-menu-item key="qrcode">
-                                                    <a-icon type="qrcode"></a-icon>二维码与复制
-                                                </a-menu-item>
                                                 <a-menu-item key="users">
                                                     <a-icon type="team"></a-icon>用户与下载
                                                 </a-menu-item>
@@ -170,18 +189,6 @@
                                             </div>
                                         </div>
                                     </template>
-                                    <template slot="settings" slot-scope="text, dbInbound">
-                                        <a-button type="link" @click="showInfo(dbInbound)">查看详情</a-button>
-                                    </template>
-                                    <template slot="stream" slot-scope="text, dbInbound">
-                                        <template v-if="inboundById[dbInbound.id] && dbInbound.isVLess">
-                                            <a-tag color="green">[[ streamLabel(dbInbound) ]]</a-tag>
-                                            <a-tag v-if="inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
-                                            <a-tag v-if="inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
-                                            <a-tag v-if="inboundById[dbInbound.id].stream.isReality" color="geekblue">Reality</a-tag>
-                                        </template>
-                                        <span v-else class="muted-text">无</span>
-                                    </template>
                                     <template slot="enable" slot-scope="text, dbInbound">
                                         <a-switch v-model="dbInbound.enable" :loading="isPending(dbInbound.id)"
                                                   :disabled="isPending(dbInbound.id)"
@@ -189,9 +196,11 @@
                                                   @change="checked => switchEnable(dbInbound, checked)"></a-switch>
                                     </template>
                                     <template slot="condition" slot-scope="text, dbInbound">
-                                        <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
-                                            [[ tag.label ]]
-                                        </a-tag>
+                                        <div class="health-tag-list">
+                                            <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
+                                                [[ tag.label ]]
+                                            </a-tag>
+                                        </div>
                                     </template>
                                     <template slot="expiryTime" slot-scope="text, dbInbound">
                                         <template v-if="dbInbound.expiryTime > 0">
@@ -223,8 +232,6 @@
                                     </div>
                                     <div class="inbound-mobile-tags">
                                         <a-tag color="cyan">端口 [[ dbInbound.port ]]</a-tag>
-                                        <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isTls" color="blue">TLS</a-tag>
-                                        <a-tag v-if="inboundById[dbInbound.id] && inboundById[dbInbound.id].stream.isXTls" color="purple">XTLS</a-tag>
                                         <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
                                             [[ tag.label ]]
                                         </a-tag>
@@ -274,40 +281,23 @@
         width: 72,
         scopedSlots: { customRender: 'enable' },
     }, {
-        title: "ID",
-        align: 'center',
-        dataIndex: "id",
-        width: 64,
+        title: "入站",
+        width: 190,
+        scopedSlots: { customRender: 'inbound' },
     }, {
-        title: "备注",
+        title: "用户",
         align: 'center',
-        width: 160,
-        dataIndex: "remark",
-    }, {
-        title: "端口",
-        align: 'center',
-        dataIndex: "port",
-        width: 90,
+        width: 110,
+        scopedSlots: { customRender: 'users' },
     }, {
         title: "流量与限额",
         align: 'center',
-        width: 260,
+        width: 250,
         scopedSlots: { customRender: 'traffic' },
-    }, {
-        title: "详细信息",
-        align: 'center',
-        width: 100,
-        scopedSlots: { customRender: 'settings' },
-    }, {
-        key: "stream",
-        title: "传输配置",
-        align: 'center',
-        width: 160,
-        scopedSlots: { customRender: 'stream' },
     }, {
         title: "状态提示",
         align: 'center',
-        width: 150,
+        width: 132,
         scopedSlots: { customRender: 'condition' },
     }, {
         title: "到期时间",
@@ -342,7 +332,8 @@
             trafficResetDay: 1,
             pendingInboundIds: {},
             filtersInitialized: false,
-            showStreamColumn: false,
+            selectedInboundIds: [],
+            batchPending: false,
         },
         methods: {
             loading(spinning=true) {
@@ -386,6 +377,24 @@
                     this.dbInbounds.push(dbInbound);
                     this.$set(this.inboundById, dbInbound.id, dbInbound.toInbound());
                 }
+            },
+            userCount(dbInbound) {
+                const inbound = this.inboundById[dbInbound.id];
+                return inbound && inbound.settings && Array.isArray(inbound.settings.vlesses)
+                    ? inbound.settings.vlesses.length : 0;
+            },
+            inboundRow(dbInbound) {
+                return {
+                    on: {
+                        click: event => {
+                            if (event.target.closest('button, a, input, .ant-checkbox-wrapper')) return;
+                            this.showInfo(dbInbound);
+                        },
+                    },
+                };
+            },
+            selectInbounds(selectedRowKeys) {
+                this.selectedInboundIds = selectedRowKeys;
             },
             resetFilters() {
                 this.filters.query = '';
@@ -448,13 +457,6 @@
                 }
                 return `已用 ${this.trafficPercent(dbInbound)}% · 月度限额 ${sizeFormat(dbInbound.total)}`;
             },
-            streamLabel(dbInbound) {
-                const inbound = this.inboundById[dbInbound.id];
-                if (inbound == null || !dbInbound.isVLess) {
-                    return '无';
-                }
-                return inbound.stream.network || 'tcp';
-            },
             expiryLabel(dbInbound) {
                 if (dbInbound.expiryTime <= 0) {
                     return '无限期';
@@ -474,6 +476,7 @@
                 const total = Number(dbInbound.total || 0);
                 const ratio = total > 0 ? used / total : 0;
                 return {
+                    missingUsers: dbInbound.enable && this.userCount(dbInbound) === 0,
                     disabled: !dbInbound.enable,
                     expired: expiry > 0 && expiry <= now,
                     expiring: expiry > now && expiry <= now + 7 * 24 * 60 * 60 * 1000,
@@ -484,6 +487,7 @@
             conditionTags(dbInbound) {
                 const condition = this.conditionFor(dbInbound);
                 const tags = [];
+                if (condition.missingUsers) tags.push({key: 'missing-users', label: '未配置用户', color: 'orange'});
                 if (condition.expired) tags.push({key: 'expired', label: '已到期', color: 'red'});
                 else if (condition.expiring) tags.push({key: 'expiring', label: '7 天内到期', color: 'orange'});
                 if (condition.exhausted) tags.push({key: 'exhausted', label: '流量耗尽', color: 'red'});
@@ -496,7 +500,7 @@
                 const condition = this.conditionFor(dbInbound);
                 switch (this.filters.quick) {
                     case 'attention':
-                        return condition.expired || condition.expiring || condition.exhausted || condition.highUsage;
+                        return condition.missingUsers || condition.expired || condition.expiring || condition.exhausted || condition.highUsage;
                     case 'expired':
                         return condition.expired;
                     case 'expiring':
@@ -526,9 +530,6 @@
                     return;
                 }
                 switch (action.key) {
-                    case "qrcode":
-                        this.showQrcode(dbInbound);
-                        break;
                     case "users":
                         this.openUsers(dbInbound);
                         break;
@@ -542,6 +543,45 @@
                         this.delInbound(dbInbound);
                         break;
                 }
+            },
+            clickBatchAction(action) {
+                if (this.batchPending || this.selectedInboundIds.length === 0) return;
+                const labels = {
+                    enable: '启用',
+                    disable: '停用',
+                    resetTraffic: '重置流量',
+                };
+                const selected = this.dbInbounds.filter(inbound => this.selectedInboundIds.includes(inbound.id));
+                if (!selected.length || !labels[action.key]) return;
+                this.$confirm({
+                    title: `批量${labels[action.key]}`,
+                    content: `将对 ${selected.length} 条入站执行“${labels[action.key]}”。配置与月度限额不会被删除。`,
+                    okText: `确认${labels[action.key]}`,
+                    okType: action.key === 'disable' ? 'danger' : 'primary',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        this.batchPending = true;
+                        let successCount = 0;
+                        try {
+                            for (const dbInbound of selected) {
+                                const next = new DBInbound(dbInbound);
+                                if (action.key === 'enable') next.enable = true;
+                                if (action.key === 'disable') next.enable = false;
+                                if (action.key === 'resetTraffic') {
+                                    next.up = 0;
+                                    next.down = 0;
+                                }
+                                const msg = await HttpUtil.post(`/xui/inbound/update/${next.id}`, this.inboundPayload(dbInbound.toInbound(), next));
+                                if (msg.success) successCount++;
+                            }
+                            await this.getDBInbounds();
+                            this.selectedInboundIds = [];
+                            this.$message.success(`${successCount} 条入站已${labels[action.key]}。`);
+                        } finally {
+                            this.batchPending = false;
+                        }
+                    },
+                });
             },
             openAddInbound() {
                 inModal.show({
@@ -575,27 +615,6 @@
                         await this.updateInbound(inbound, editableInbound, userModal);
                     },
                 });
-            },
-            async showQrcode(dbInbound) {
-                const inbound = dbInbound.toInbound();
-                const user = inbound.settings.vlesses[0];
-                if (!user) {
-                    this.$message.error('该入站暂未配置用户。');
-                    return;
-                }
-                this.setPending(dbInbound.id, true);
-                try {
-                    const msg = await HttpUtil.post(`/xui/inbound/${dbInbound.id}/userProfile`, {
-                        clientId: user.id,
-                        host: location.hostname,
-                        name: dbInbound.userDisplayName(user, 0),
-                    });
-                    if (msg.success && msg.obj && msg.obj.link) {
-                        qrModal.show(`${dbInbound.remark || '未命名入站'} · 二维码`, msg.obj.link);
-                    }
-                } finally {
-                    this.setPending(dbInbound.id, false);
-                }
             },
             inboundPayload(inbound, dbInbound) {
                 return {
@@ -700,7 +719,11 @@
                 });
             },
             showInfo(dbInbound) {
-                infoModal.show(dbInbound);
+                infoModal.show({
+                    dbInbound,
+                    onUsers: () => this.openUsers(dbInbound),
+                    onEdit: () => this.openEditInbound(dbInbound),
+                });
             },
             async switchEnable(dbInbound, checked) {
                 const previous = !checked;
@@ -755,9 +778,23 @@
             enabledCount() {
                 return this.dbInbounds.filter(inbound => inbound.enable).length;
             },
-            displayColumns() {
-                return this.showStreamColumn ? columns : columns.filter(column => column.key !== 'stream');
+            totalUserCount() {
+                return this.dbInbounds.reduce((count, inbound) => count + this.userCount(inbound), 0);
             },
+            attentionCount() {
+                return this.dbInbounds.filter(inbound => {
+                    const condition = this.conditionFor(inbound);
+                    return condition.missingUsers || condition.expired || condition.expiring || condition.exhausted || condition.highUsage;
+                }).length;
+            },
+            rowSelection() {
+                return {
+                    selectedRowKeys: this.selectedInboundIds,
+                    onChange: this.selectInbounds,
+                    getCheckboxProps: dbInbound => ({disabled: this.isPending(dbInbound.id)}),
+                };
+            },
+            displayColumns() { return columns; },
             hasActiveFilters() {
                 return this.filters.query !== '' || this.filters.status !== 'all' ||
                     this.filters.sort !== 'id-asc' || this.filters.quick !== 'all';
@@ -777,7 +814,7 @@
                 const counts = {all: this.dbInbounds.length, attention: 0, expired: 0, expiring: 0, highUsage: 0, exhausted: 0, disabled: 0};
                 for (const inbound of this.dbInbounds) {
                     const condition = this.conditionFor(inbound);
-                    if (condition.expired || condition.expiring || condition.exhausted || condition.highUsage) counts.attention++;
+                    if (condition.missingUsers || condition.expired || condition.expiring || condition.exhausted || condition.highUsage) counts.attention++;
                     if (condition.expired) counts.expired++;
                     if (condition.expiring) counts.expiring++;
                     if (condition.highUsage) counts.highUsage++;

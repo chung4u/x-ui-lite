@@ -60,7 +60,7 @@
         <template v-if="inbound.protocol === Protocols.VLESS">{{template "form/vless"}}</template>
     </section>
 
-    <section class="inbound-form-section" v-if="inbound.canEnableStream()">
+    <section class="inbound-form-section" v-if="inbound.canEnableStream() && inbound.stream.security !== 'reality'">
         <div class="inbound-form-section-head">
             <div class="form-section-icon violet"><a-icon type="deployment-unit"></a-icon></div>
             <div>
@@ -68,24 +68,29 @@
                 <p>选择 TCP、WebSocket、gRPC 等传输方式及其详细参数。</p>
             </div>
         </div>
-        <a-alert v-if="inbound.stream.security === 'reality'" type="info" show-icon
-                 message="当前入站使用 Reality"
-                 description="Reality 传输参数将原样保留；如需调整请使用原始配置工具，以免影响现有用户。"></a-alert>
-        <template v-else>{{template "form/streamSettings"}}</template>
+        {{template "form/streamSettings"}}
     </section>
 
-    <section class="inbound-form-section" v-if="inbound.canEnableTls() || inbound.canSniffing()">
+    <section class="inbound-form-section" v-if="inbound.protocol === Protocols.VLESS || inbound.canSniffing()">
         <div class="inbound-form-section-head">
             <div class="form-section-icon warning"><a-icon type="safety-certificate"></a-icon></div>
             <div>
-                <h3>TLS 与高级设置</h3>
-                <p>证书和嗅探参数会影响连接兼容性，无特殊需求时保持现有值。</p>
+                <h3>安全与 REALITY</h3>
+                <p>配置安全方式、伪装握手和客户端兼容性。</p>
             </div>
         </div>
-        <a-alert v-if="inbound.stream.security === 'reality'" type="info" show-icon
-                 message="当前入站使用 Reality"
-                 description="为确保现有客户端持续可用，Reality 参数将在保存时原样保留。"></a-alert>
-        <template v-else-if="inbound.canEnableTls()">{{template "form/tlsSettings"}}</template>
+        <a-form class="security-mode-form" layout="vertical" v-if="inbound.protocol === Protocols.VLESS">
+            <a-form-item label="安全方式">
+                <a-radio-group :value="inbound.stream.security" button-style="solid" @change="securityModeChange($event.target.value)">
+                    <a-radio-button value="none">无</a-radio-button>
+                    <a-radio-button value="tls" :disabled="!inbound.canEnableTls()">TLS</a-radio-button>
+                    <a-radio-button value="reality">REALITY</a-radio-button>
+                    <a-radio-button value="xtls" :disabled="!inbound.canEnableXTls()">XTLS</a-radio-button>
+                </a-radio-group>
+            </a-form-item>
+        </a-form>
+        <template v-if="inbound.stream.security === 'reality'">{{template "form/realitySettings"}}</template>
+        <template v-else-if="inbound.canEnableTls() && (inbound.tls || inbound.xtls)">{{template "form/tlsSettings"}}</template>
         <template v-if="inbound.canSniffing()">{{template "form/sniffing"}}</template>
     </section>
 </div>
