@@ -11,19 +11,39 @@ permissions:
 jobs:
   build:
     name: Build Linux ${{ matrix.arch }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            xray_asset: Xray-linux-64.zip
+            xray_sha256: b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            xray_asset: Xray-linux-arm64-v8a.zip
+            xray_sha256: 64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be
     steps:
       - uses: actions/checkout@v4
       - name: Build package
         env:
           TARGET_ARCH: ${{ matrix.arch }}
           RELEASE_TAG: ${{ github.ref_name }}
+          XRAY_ASSET: ${{ matrix.xray_asset }}
+          XRAY_SHA256: ${{ matrix.xray_sha256 }}
         run: |
           set -euo pipefail
+          XRAY_ZIP="$RUNNER_TEMP/$XRAY_ASSET"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/XTLS/Xray-core/releases/download/v26.11.9/${XRAY_ASSET}" \
+            -o "$XRAY_ZIP"
+          printf '%s  %s\n' "$XRAY_SHA256" "$XRAY_ZIP" | sha256sum --check
+          mkdir -p package/bin
+          unzip -p "$XRAY_ZIP" xray > "package/bin/xray-linux-$TARGET_ARCH"
+          chmod 0755 "package/bin/xray-linux-$TARGET_ARCH"
+          cp bin/geoip.dat bin/geosite.dat package/bin/
+          cp x-ui.service x-ui.sh scripts/install.sh package/
           docker run --rm \
             -e TARGET_ARCH \
             -e RELEASE_TAG \
@@ -32,48 +52,17 @@ jobs:
             -w /workspace \
             golang:1.22-bullseye \
             bash -ceu '
-              apt-get update -y
-              apt-get install -y --no-install-recommends ca-certificates curl unzip gcc
-              if [[ "$TARGET_ARCH" == "arm64" ]]; then
-                apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-                export CC=aarch64-linux-gnu-gcc
-              else
-                go test -mod=readonly ./...
-              fi
-              mkdir -p package/bin
-              CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -mod=readonly -buildvcs=false -trimpath -o package/x-ui .
-              case "$TARGET_ARCH" in
-                amd64)
-                  XRAY_ASSET="Xray-linux-64.zip"
-                  XRAY_SHA256="b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82"
-                  ;;
-                arm64)
-                  XRAY_ASSET="Xray-linux-arm64-v8a.zip"
-                  XRAY_SHA256="64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be"
-                  ;;
-              esac
-              curl --fail --silent --show-error --location --retry 3 \
-                "https://github.com/XTLS/Xray-core/releases/download/v26.11.9/${XRAY_ASSET}" \
-                -o "/tmp/${XRAY_ASSET}"
-              echo "${XRAY_SHA256}  /tmp/${XRAY_ASSET}" | sha256sum --check --status
-              unzip -p "/tmp/${XRAY_ASSET}" xray > "package/bin/xray-linux-${TARGET_ARCH}"
-              chmod 0755 "package/bin/xray-linux-${TARGET_ARCH}"
-              cp bin/geoip.dat bin/geosite.dat package/bin/
-              cp x-ui.service x-ui.sh scripts/install.sh package/
-              test "$(cat config/version)" = "${RELEASE_TAG#v}"
-              if [[ "$TARGET_ARCH" == "amd64" ]]; then
-                test_dir="$(mktemp -d)"
-                (
-                  cd package
-                  export XUI_DB_PATH="$test_dir/x-ui.db"
-                  test "$(./x-ui -v)" = "${RELEASE_TAG#v}"
-                  printf "%s" "release-smoke-password" | ./x-ui setting -username smoke-admin -password-stdin
-                  ./x-ui check
-                )
-                rm -rf "$test_dir"
-              fi
-              tar -czf "x-ui-linux-${TARGET_ARCH}.tar.gz" -C package .
+              test "$(go env GOARCH)" = "$TARGET_ARCH"
+              go test -mod=readonly -buildvcs=false -trimpath ./...
+              go build -mod=readonly -buildvcs=false -trimpath -o package/x-ui .
+              cd package
+              test "$(./x-ui -v)" = "${RELEASE_TAG#v}"
+              test_dir="$(mktemp -d)"
+              export XUI_DB_PATH="$test_dir/x-ui.db"
+              printf "%s" "release-smoke-password" | ./x-ui setting -username smoke-admin -password-stdin
+              ./x-ui check
             '
+          tar -czf "x-ui-linux-$TARGET_ARCH.tar.gz" -C package .
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.arch }}
