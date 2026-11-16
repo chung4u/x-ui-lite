@@ -495,6 +495,7 @@ class StreamSettings extends XrayCommonClass {
                 quicSettings=new QuicStreamSettings(),
                 grpcSettings=new GrpcStreamSettings(),
                 realitySettings=null,
+                xhttpSettings=null,
                 ) {
         super();
         this.network = network;
@@ -507,6 +508,7 @@ class StreamSettings extends XrayCommonClass {
         this.quic = quicSettings;
         this.grpc = grpcSettings;
         this.reality = realitySettings;
+        this.xhttp = xhttpSettings || {host: '', path: '/', mode: 'auto'};
     }
 
     get isTls() {
@@ -555,6 +557,7 @@ class StreamSettings extends XrayCommonClass {
             QuicStreamSettings.fromJson(json.quicSettings),
             GrpcStreamSettings.fromJson(json.grpcSettings),
             ObjectUtil.clone(json.realitySettings || null),
+            ObjectUtil.deepClone(json.xhttpSettings || null),
         );
     }
 
@@ -571,6 +574,7 @@ class StreamSettings extends XrayCommonClass {
             httpSettings: network === 'http' ? this.http.toJson() : undefined,
             quicSettings: network === 'quic' ? this.quic.toJson() : undefined,
             grpcSettings: network === 'grpc' ? this.grpc.toJson() : undefined,
+            xhttpSettings: network === 'xhttp' ? ObjectUtil.deepClone(this.xhttp) : undefined,
             realitySettings: this.isReality ? ObjectUtil.clone(this.reality || {}) : undefined,
         };
     }
@@ -690,6 +694,10 @@ class Inbound extends XrayCommonClass {
 
     get isH2() {
         return this.network === "http";
+    }
+
+    get isXHTTP() {
+        return this.network === 'xhttp';
     }
 
     // VMess & VLess
@@ -832,6 +840,7 @@ class Inbound extends XrayCommonClass {
             case "http":
             case "quic":
             case "grpc":
+            case "xhttp":
                 return true;
             default:
                 return false;
@@ -1004,6 +1013,12 @@ class Inbound extends XrayCommonClass {
                 const grpc = this.stream.grpc;
                 params.set("serviceName", grpc.serviceName);
                 break;
+            case 'xhttp':
+                params.set('path', this.stream.xhttp.path || '/');
+                params.set('mode', this.stream.xhttp.mode === 'auto' ? 'stream-up' : (this.stream.xhttp.mode || 'stream-up'));
+                if (this.stream.xhttp.host) params.set('host', this.stream.xhttp.host);
+                params.set('alpn', 'h2');
+                break;
         }
 
         if (this.stream.security === 'tls') {
@@ -1013,8 +1028,18 @@ class Inbound extends XrayCommonClass {
             }
         }
 
-        if (this.xtls) {
+        if (this.xtls || this.stream.isReality) {
             params.set("flow", this.settings.vlesses[0].flow);
+        }
+
+        if (this.stream.isReality) {
+            const reality = this.stream.reality || {};
+            const serverName = (reality.serverNames || []).find(Boolean);
+            const shortId = (reality.shortIds || []).find(Boolean);
+            if (serverName) params.set('sni', serverName);
+            if (shortId) params.set('sid', shortId);
+            if (reality.publicKey) params.set('pbk', reality.publicKey);
+            params.set('fp', reality.clientFingerprint || 'chrome');
         }
 
         const link = `vless://${uuid}@${address}:${port}`;

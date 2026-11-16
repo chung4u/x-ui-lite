@@ -23,6 +23,9 @@ func (s *InboundService) GetOrCreateVLESSUserSubscriptionToken(inboundID int, us
 	if _, err := getVLESSInboundClient(inbound, clientID); err != nil {
 		return "", err
 	}
+	if err := ValidateInboundUserAccess(inbound, clientID); err != nil {
+		return "", err
+	}
 
 	db := database.GetDB()
 	subscription := &model.InboundSubscription{}
@@ -65,6 +68,9 @@ func (s *InboundService) GetVLESSUserSubscription(token string, host string) (*V
 	inbound, err := s.GetInbound(subscription.InboundId)
 	if err != nil {
 		return nil, common.NewError("订阅不存在或已失效")
+	}
+	if err := ValidateInboundUserAccess(inbound, subscription.ClientId); err != nil {
+		return nil, err
 	}
 	return buildVLESSUserProfile(inbound, subscription.ClientId, host, "")
 }

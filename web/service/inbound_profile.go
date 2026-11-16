@@ -27,19 +27,24 @@ type VLESSUserProfile struct {
 // returned to the authenticated inbound owner so the panel can show the same
 // values that are written to the downloadable Clash Verge profile.
 type VLESSConnectionDetails struct {
-	Name              string `json:"name"`
-	Type              string `json:"type"`
-	Server            string `json:"server"`
-	Port              int    `json:"port"`
-	UUID              string `json:"uuid"`
-	Encryption        string `json:"encryption"`
-	Network           string `json:"network"`
-	UDP               bool   `json:"udp"`
-	TLS               bool   `json:"tls"`
-	ServerName        string `json:"serverName"`
-	Flow              string `json:"flow"`
-	ClientFingerprint string `json:"clientFingerprint"`
-	RealityPublicKey  string `json:"realityPublicKey"`
+	Name              string   `json:"name"`
+	Type              string   `json:"type"`
+	Server            string   `json:"server"`
+	Port              int      `json:"port"`
+	UUID              string   `json:"uuid"`
+	Encryption        string   `json:"encryption"`
+	Network           string   `json:"network"`
+	UDP               bool     `json:"udp"`
+	TLS               bool     `json:"tls"`
+	ServerName        string   `json:"serverName"`
+	Flow              string   `json:"flow"`
+	ClientFingerprint string   `json:"clientFingerprint"`
+	RealityPublicKey  string   `json:"realityPublicKey"`
+	XHTTPPath         string   `json:"xhttpPath,omitempty"`
+	XHTTPMode         string   `json:"xhttpMode,omitempty"`
+	XHTTPHost         string   `json:"xhttpHost,omitempty"`
+	ALPN              []string `json:"alpn,omitempty"`
+	SkipCertVerify    bool     `json:"skipCertVerify"`
 }
 
 type vlessInboundSettings struct {
@@ -75,15 +80,21 @@ type vlessStreamSettings struct {
 	GRPCSettings struct {
 		ServiceName string `json:"serviceName"`
 	} `json:"grpcSettings"`
+	XHTTPSettings struct {
+		Path string `json:"path"`
+		Host string `json:"host"`
+		Mode string `json:"mode"`
+	} `json:"xhttpSettings"`
 }
 
 type clashVLESSConfig struct {
-	MixedPort   int               `yaml:"mixed-port"`
-	Mode        string            `yaml:"mode"`
-	LogLevel    string            `yaml:"log-level"`
-	Proxies     []clashVLESSProxy `yaml:"proxies"`
-	ProxyGroups []clashProxyGroup `yaml:"proxy-groups"`
-	Rules       []string          `yaml:"rules"`
+	DNS         map[string]interface{} `yaml:"dns"`
+	MixedPort   int                    `yaml:"mixed-port"`
+	Mode        string                 `yaml:"mode"`
+	LogLevel    string                 `yaml:"log-level"`
+	Proxies     []clashVLESSProxy      `yaml:"proxies"`
+	ProxyGroups []clashProxyGroup      `yaml:"proxy-groups"`
+	Rules       []string               `yaml:"rules"`
 }
 
 type clashVLESSProxy struct {
@@ -91,9 +102,11 @@ type clashVLESSProxy struct {
 	Type              string            `yaml:"type"`
 	Server            string            `yaml:"server"`
 	Port              int               `yaml:"port"`
-	UUID              string            `yaml:"uuid"`
+	Password          string            `yaml:"password,omitempty"`
+	SNI               string            `yaml:"sni,omitempty"`
+	UUID              string            `yaml:"uuid,omitempty"`
 	Flow              string            `yaml:"flow,omitempty"`
-	Encryption        string            `yaml:"encryption"`
+	Encryption        string            `yaml:"encryption,omitempty"`
 	Network           string            `yaml:"network,omitempty"`
 	TLS               bool              `yaml:"tls,omitempty"`
 	ServerName        string            `yaml:"servername,omitempty"`
@@ -102,12 +115,29 @@ type clashVLESSProxy struct {
 	WSOpts            *clashWSOpts      `yaml:"ws-opts,omitempty"`
 	H2Opts            *clashH2Opts      `yaml:"h2-opts,omitempty"`
 	GRPCOpts          *clashGRPCOpts    `yaml:"grpc-opts,omitempty"`
+	XHTTPOpts         *clashXHTTPOpts   `yaml:"xhttp-opts,omitempty"`
+	ALPN              []string          `yaml:"alpn,omitempty"`
+	SkipCertVerify    *bool             `yaml:"skip-cert-verify,omitempty"`
 	UDP               bool              `yaml:"udp"`
 }
 
+type clashXHTTPOpts struct {
+	Path          string                  `yaml:"path"`
+	Host          string                  `yaml:"host"`
+	Mode          string                  `yaml:"mode"`
+	ReuseSettings clashXHTTPReuseSettings `yaml:"reuse-settings"`
+}
+
+type clashXHTTPReuseSettings struct {
+	MaxConnections   string `yaml:"max-connections" json:"maxConnections"`
+	HMaxRequestTimes string `yaml:"h-max-request-times" json:"hMaxRequestTimes"`
+	HMaxReusableSecs string `yaml:"h-max-reusable-secs" json:"hMaxReusableSecs"`
+}
+
 type clashRealityOpts struct {
-	PublicKey string `yaml:"public-key"`
-	ShortID   string `yaml:"short-id,omitempty"`
+	PublicKey             string `yaml:"public-key"`
+	ShortID               string `yaml:"short-id,omitempty"`
+	SupportX25519MLKEM768 bool   `yaml:"support-x25519mlkem768"`
 }
 
 type clashWSOpts struct {
@@ -125,9 +155,13 @@ type clashGRPCOpts struct {
 }
 
 type clashProxyGroup struct {
-	Name    string   `yaml:"name"`
-	Type    string   `yaml:"type"`
-	Proxies []string `yaml:"proxies"`
+	URL      string   `yaml:"url,omitempty"`
+	Interval int      `yaml:"interval,omitempty"`
+	Timeout  int      `yaml:"timeout,omitempty"`
+	Lazy     *bool    `yaml:"lazy,omitempty"`
+	Name     string   `yaml:"name"`
+	Type     string   `yaml:"type"`
+	Proxies  []string `yaml:"proxies"`
 }
 
 func (s *InboundService) GetVLESSUserProfile(inboundID int, userID int, clientID string, host string, requestedName string) (*VLESSUserProfile, error) {
@@ -138,12 +172,18 @@ func (s *InboundService) GetVLESSUserProfile(inboundID int, userID int, clientID
 	if inbound.UserId != userID {
 		return nil, common.NewError("无权访问该入站")
 	}
+	if err := ValidateInboundUserAccess(inbound, clientID); err != nil {
+		return nil, err
+	}
 	return buildVLESSUserProfile(inbound, clientID, host, requestedName)
 }
 
 func buildVLESSUserProfile(inbound *model.Inbound, clientID string, host string, requestedName string) (*VLESSUserProfile, error) {
 	if inbound.Protocol != model.VLESS {
 		return nil, common.NewError("仅支持 VLESS 入站")
+	}
+	if inbound.ArchivedAt > 0 {
+		return nil, common.NewError("该入站已归档")
 	}
 
 	settings := vlessInboundSettings{}
@@ -161,30 +201,37 @@ func buildVLESSUserProfile(inbound *model.Inbound, clientID string, host string,
 		return nil, common.NewError("未找到指定 VLESS 用户")
 	}
 
-	server, err := normalizeProfileHost(host)
-	if err != nil {
-		return nil, err
-	}
 	stream := vlessStreamSettings{}
 	if err := json.Unmarshal([]byte(inbound.StreamSettings), &stream); err != nil {
 		return nil, common.NewError("传输配置无效:", err)
 	}
-	name := strings.TrimSpace(requestedName)
-	if name == "" {
-		name = strings.TrimSpace(client.Email)
+	if stream.Network == "xhttp" {
+		if err := validateManagedXHTTPProfile(inbound, client, stream); err != nil {
+			return nil, err
+		}
+		host = inbound.ExternalHost
+	} else if inbound.ExternalHost != "" || inbound.ExternalPort != 0 || inbound.ExternalTLS {
+		if err := validateForwardedRealityEndpoint(inbound); err != nil {
+			return nil, err
+		}
+		host = inbound.ExternalHost
 	}
-	if name == "" {
-		name = "用户"
+	server, err := normalizeProfileHost(host)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(inbound.Remark) != "" {
-		name = strings.TrimSpace(inbound.Remark) + " · " + name
-	}
+	name := "US｜" + firstNonEmpty([]string{client.Email, requestedName, "用户"})
 
 	link, proxy, err := buildVLESSProfile(inbound, client, stream, server, name)
 	if err != nil {
 		return nil, err
 	}
+	dns := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(`{"enable":true,"use-hosts":true,"enhanced-mode":"redir-host","default-nameserver":["223.5.5.5","119.29.29.29"],"nameserver":["https://dns.alidns.com/dns-query","https://doh.pub/dns-query"],"proxy-server-nameserver":["https://dns.alidns.com/dns-query","https://doh.pub/dns-query"],"nameserver-policy":{"geosite:cn":["https://dns.alidns.com/dns-query","https://doh.pub/dns-query"]},"fallback":["https://1.1.1.1/dns-query#PROXY","https://8.8.8.8/dns-query#PROXY"],"fallback-filter":{"geoip":true,"geoip-code":"CN","ipcidr":["240.0.0.0/4","0.0.0.0/32","127.0.0.1/32"],"domain":["+.google.com","+.youtube.com","+.facebook.com","+.openai.com","+.chatgpt.com"]}}`), &dns); err != nil {
+		return nil, err
+	}
 	config := clashVLESSConfig{
+		DNS:       dns,
 		MixedPort: 7890,
 		Mode:      "rule",
 		LogLevel:  "info",
@@ -193,8 +240,31 @@ func buildVLESSUserProfile(inbound *model.Inbound, clientID string, host string,
 			Name:    "PROXY",
 			Type:    "select",
 			Proxies: []string{name, "DIRECT"},
-		}},
-		Rules: []string{"MATCH,PROXY"},
+		}, {Name: "广告过滤", Type: "select", Proxies: []string{"DIRECT", "REJECT"}}},
+		Rules: []string{directProfileRule(server), "DOMAIN-SUFFIX,localhost,DIRECT", "DOMAIN-SUFFIX,local,DIRECT", "DOMAIN-SUFFIX,lan,DIRECT", "GEOSITE,category-ads-all,广告过滤", "DOMAIN-SUFFIX,cn,DIRECT", "GEOIP,LAN,DIRECT", "GEOSITE,cn,DIRECT", "GEOIP,CN,DIRECT", "MATCH,PROXY"},
+	}
+	hy, err := hyProxy(inbound.Id, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if hy != nil {
+		if hy.Server != server {
+			config.Rules = append([]string{directProfileRule(hy.Server)}, config.Rules...)
+		}
+		if hy.Name == name {
+			hy.Name += " (HY2)"
+		}
+		config.Proxies = append(config.Proxies, *hy)
+		auto := "自动（HY2 优先）"
+		if auto == name {
+			auto += " · 自动"
+		}
+		lazy := false
+		config.ProxyGroups = append(config.ProxyGroups, clashProxyGroup{
+			Name: auto, Type: "fallback", Proxies: []string{hy.Name, name},
+			URL: "https://www.gstatic.com/generate_204", Interval: 60, Timeout: 5000, Lazy: &lazy,
+		})
+		config.ProxyGroups[0].Proxies = []string{auto, hy.Name, name, "DIRECT"}
 	}
 	content, err := yaml.Marshal(config)
 	if err != nil {
@@ -226,7 +296,48 @@ func connectionDetailsFromProxy(proxy clashVLESSProxy) VLESSConnectionDetails {
 	if proxy.RealityOpts != nil {
 		details.RealityPublicKey = proxy.RealityOpts.PublicKey
 	}
+	if proxy.XHTTPOpts != nil {
+		details.XHTTPPath = proxy.XHTTPOpts.Path
+		details.XHTTPMode = proxy.XHTTPOpts.Mode
+		details.XHTTPHost = proxy.XHTTPOpts.Host
+		details.ALPN = append([]string(nil), proxy.ALPN...)
+	}
+	if proxy.SkipCertVerify != nil {
+		details.SkipCertVerify = *proxy.SkipCertVerify
+	}
 	return details
+}
+
+// The panel owns an HTTP backend, while clients connect to Caddy's public TLS
+// endpoint. Never infer the public port or TLS mode from the backend socket.
+func validateManagedXHTTPProfile(inbound *model.Inbound, client *vlessInboundClient, stream vlessStreamSettings) error {
+	host := strings.TrimSpace(inbound.ExternalHost)
+	if host == "" || strings.ContainsAny(host, " \t\r\n/\\?#@") ||
+		(strings.Contains(host, ":") && net.ParseIP(host) == nil) || strings.ContainsAny(host, "[]") {
+		return common.NewError("XHTTP 公网域名配置无效")
+	}
+	if inbound.ExternalPort < 1 || inbound.ExternalPort > 65535 || !inbound.ExternalTLS {
+		return common.NewError("XHTTP 公网 TLS 入口配置不完整")
+	}
+	if stream.Security != "none" && stream.Security != "" {
+		return common.NewError("托管 XHTTP 的 TLS 应由外部入口终止")
+	}
+	if client.Flow != "" {
+		return common.NewError("XHTTP 用户 Flow 必须为空")
+	}
+	path := stream.XHTTPSettings.Path
+	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "\r\n?#") {
+		return common.NewError("XHTTP 路径配置无效")
+	}
+	if configured := strings.TrimSpace(stream.XHTTPSettings.Host); configured != "" && !strings.EqualFold(configured, host) {
+		return common.NewError("XHTTP Host 与公网域名不一致")
+	}
+	switch stream.XHTTPSettings.Mode {
+	case "", "auto", "stream-up", "stream-one", "packet-up":
+	default:
+		return common.NewError("XHTTP 模式无效")
+	}
+	return nil
 }
 
 func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, stream vlessStreamSettings, server string, name string) (string, clashVLESSProxy, error) {
@@ -252,6 +363,9 @@ func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, strea
 	security := strings.TrimSpace(stream.Security)
 	switch security {
 	case "reality":
+		if inbound.ExternalPort > 0 {
+			proxy.Port = inbound.ExternalPort
+		}
 		serverName := firstNonEmpty(stream.RealitySettings.ServerNames)
 		publicKey, err := deriveRealityPublicKey(stream.RealitySettings.PrivateKey)
 		if err != nil {
@@ -265,7 +379,11 @@ func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, strea
 			fingerprint = "chrome"
 		}
 		proxy.ClientFingerprint = fingerprint
-		proxy.RealityOpts = &clashRealityOpts{PublicKey: publicKey, ShortID: shortID}
+		proxy.RealityOpts = &clashRealityOpts{
+			PublicKey:             publicKey,
+			ShortID:               shortID,
+			SupportX25519MLKEM768: true,
+		}
 		params.Set("security", "reality")
 		params.Set("pbk", publicKey)
 		params.Set("fp", fingerprint)
@@ -287,6 +405,35 @@ func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, strea
 	}
 
 	switch network {
+	case "xhttp":
+		// These values were verified against the installed Mihomo version. Its
+		// XHTTP implementation does not inherit Xray's implicit XMUX defaults.
+		reuse := clashXHTTPReuseSettings{MaxConnections: "3", HMaxRequestTimes: "600-900", HMaxReusableSecs: "1800-3000"}
+		mode := stream.XHTTPSettings.Mode
+		if mode == "" || mode == "auto" {
+			mode = "stream-up"
+		}
+		verify := false
+		proxy.Port = inbound.ExternalPort
+		proxy.TLS = true
+		proxy.ServerName = server
+		proxy.Flow = ""
+		proxy.ClientFingerprint = "chrome"
+		proxy.ALPN = []string{"h2"}
+		proxy.SkipCertVerify = &verify
+		proxy.XHTTPOpts = &clashXHTTPOpts{Path: stream.XHTTPSettings.Path, Host: server, Mode: mode, ReuseSettings: reuse}
+		params.Set("security", "tls")
+		params.Set("sni", server)
+		params.Set("fp", "chrome")
+		params.Set("alpn", "h2")
+		params.Set("path", stream.XHTTPSettings.Path)
+		params.Set("host", server)
+		params.Set("mode", mode)
+		extra, err := json.Marshal(map[string]interface{}{"xmux": reuse})
+		if err != nil {
+			return "", proxy, err
+		}
+		params.Set("extra", string(extra))
 	case "ws":
 		proxy.WSOpts = &clashWSOpts{Path: stream.WSSettings.Path, Headers: stream.WSSettings.Headers}
 		if stream.WSSettings.Path != "" {
@@ -311,14 +458,14 @@ func buildVLESSProfile(inbound *model.Inbound, client *vlessInboundClient, strea
 			params.Set("serviceName", stream.GRPCSettings.ServiceName)
 		}
 	}
-	if client.Flow != "" {
-		params.Set("flow", client.Flow)
+	if proxy.Flow != "" {
+		params.Set("flow", proxy.Flow)
 	}
 
 	profileURL := &url.URL{
 		Scheme:   "vless",
 		User:     url.User(client.ID),
-		Host:     net.JoinHostPort(server, strconv.Itoa(inbound.Port)),
+		Host:     net.JoinHostPort(server, strconv.Itoa(proxy.Port)),
 		RawQuery: params.Encode(),
 		Fragment: name,
 	}
@@ -358,10 +505,20 @@ func normalizeProfileHost(value string) (string, error) {
 		host = parsed
 	}
 	host = strings.Trim(host, "[]")
-	if host == "" || strings.ContainsAny(host, "\r\n/\\") {
+	if host == "" || strings.ContainsAny(host, " \t\r\n,/\\@") {
 		return "", common.NewError("服务器地址无效")
 	}
 	return host, nil
+}
+
+func directProfileRule(host string) string {
+	if ip := net.ParseIP(host); ip != nil {
+		if ipv4 := ip.To4(); ipv4 != nil {
+			return "IP-CIDR," + ipv4.String() + "/32,DIRECT,no-resolve"
+		}
+		return "IP-CIDR6," + ip.String() + "/128,DIRECT,no-resolve"
+	}
+	return "DOMAIN," + host + ",DIRECT"
 }
 
 func firstNonEmpty(values []string) string {

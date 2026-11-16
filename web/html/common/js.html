@@ -8,14 +8,15 @@
 <script src="{{ .base_path }}assets/qrcode/qrious.min.js"></script>
 <script src="{{ .base_path }}assets/clipboard/clipboard.min.js"></script>
 <script src="{{ .base_path }}assets/uri/URI.min.js"></script>
-<script src="{{ .base_path }}assets/js/axios-init.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/axios-init.js?{{ .cur_ver }}-admin-security-20261031"></script>
 <script src="{{ .base_path }}assets/js/util/common.js?{{ .cur_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/date-util.js?{{ .cur_ver }}"></script>
-<script src="{{ .base_path }}assets/js/util/utils.js?{{ .cur_ver }}"></script>
-<script src="{{ .base_path }}assets/js/model/xray.js?{{ .cur_ver }}"></script>
-<script src="{{ .base_path }}assets/js/model/models.js?{{ .cur_ver }}"></script>
+<script src="{{ .base_path }}assets/js/util/utils.js?{{ .cur_ver }}-admin-security-20261031"></script>
+<script src="{{ .base_path }}assets/js/model/xray.js?{{ .cur_ver }}-xhttp-managed-v1-20261026"></script>
+<script src="{{ .base_path }}assets/js/model/models.js?{{ .cur_ver }}-unified-users-v1-20261103"></script>
 <script>
     const basePath = '{{ .base_path }}';
     axios.defaults.baseURL = basePath;
+    axios.defaults.headers.common['X-CSRF-Token'] = '{{ .csrf_token }}';
 </script>
 {{end}}

@@ -1,25 +1,24 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 {{template "head" .}}
-<body>
+<body class="ux-refined-page">
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
         <a-layout-content id="main-content" tabindex="-1">
             <a-spin :spinning="spinning" :delay="500" tip="正在加载面板配置">
-                <div class="page-shell">
+                <div class="page-shell settings-page-shell">
                     <transition name="list" appear>
                         <header class="page-header">
                             <div>
-                                <div class="page-eyebrow">Panel settings</div>
                                 <h1 class="page-title">面板设置</h1>
                             </div>
                             <div class="page-actions">
-                                <div class="settings-save-state" :class="saveBtnDisable ? 'saved' : 'pending'">
-                                    <a-icon :type="saveBtnDisable ? 'check-circle' : 'edit'"></a-icon>
-                                    [[ saveBtnDisable ? '已保存' : `${changedSettingLabels.length} 项待保存` ]]
+                                <div class="settings-save-state" :class="settingsStateTone" aria-live="polite">
+                                    <a-icon :type="settingsStateIcon"></a-icon>
+                                    [[ settingsStateLabel ]]
                                 </div>
-                                <a-button type="primary" icon="save" :disabled="saveBtnDisable"
+                                <a-button type="primary" icon="save" :disabled="saveBtnDisable || !settingsLoaded || settingsLoadError"
                                           :loading="savingSettings" @click="updateAllSetting">保存配置</a-button>
                             </div>
                         </header>
@@ -27,18 +26,20 @@
 
                     <transition name="list" appear>
                         <a-alert v-if="settingsLoadError" class="data-stale-alert" type="warning" show-icon
-                                 message="面板配置加载失败" description="当前内容可能不是服务器最新配置，请刷新页面后重试。"></a-alert>
+                                 message="面板配置加载失败">
+                            <div slot="description" class="settings-retry-copy"><span>请重新读取配置后再修改。</span><a-button icon="reload" size="small" @click="getAllSetting">重新读取</a-button></div>
+                        </a-alert>
                     </transition>
 
                     <transition name="list" appear>
-                        <section class="settings-summary-grid" aria-label="面板配置摘要">
+                        <section v-if="settingsLoaded" class="settings-summary-grid" aria-label="面板配置摘要">
                             <div class="settings-summary-item">
                                 <div class="settings-summary-icon"><a-icon type="api"></a-icon></div>
-                                <div><span>访问端点</span><strong>[[ accessEndpoint ]]</strong></div>
+                                <div><span>面板监听地址</span><strong>[[ accessEndpoint ]]</strong></div>
                             </div>
                             <div class="settings-summary-item">
-                                <div class="settings-summary-icon success"><a-icon type="safety-certificate"></a-icon></div>
-                                <div><span>证书状态</span><strong>[[ certificateStatus ]]</strong></div>
+                                <div class="settings-summary-icon" :class="certificateInfo && certificateInfo.daysRemaining > 0 ? 'success' : ''"><a-icon type="safety-certificate"></a-icon></div>
+                                <div><span>面板证书配置</span><strong>[[ certificateStatus ]]</strong></div>
                             </div>
                             <div class="settings-summary-item">
                                 <div class="settings-summary-icon violet"><a-icon type="link"></a-icon></div>
@@ -51,22 +52,45 @@
                         </section>
                     </transition>
 
+                    <transition name="list">
+                        <section v-if="settingsLoaded && saveBtnDisable && !restartRequested && (!applyState.known || pendingRestartLabels.length || applyState.corePending || applyState.trafficPending)" class="settings-apply-panel" :class="{ pending: pendingRestartLabels.length || applyState.corePending || applyState.trafficPending }" aria-live="polite">
+                            <div>
+                                <strong>[[ settingsStateLabel ]]</strong>
+                                <p v-if="applyState.corePending">已保存的核心配置尚未确认应用，请先查看核心运行状态。</p>
+                                <p v-if="pendingRestartLabels.length">[[ pendingRestartLabels.join('、') ]][[ applyState.corePending ? '等待重启；请先确认核心配置。' : '将在重启面板后生效。' ]]</p>
+                                <p v-if="!pendingRestartLabels.length && applyState.trafficPending">流量监控将在下一次采样后使用已保存的额度与重置日。</p>
+                                <p v-if="!applyState.known">暂时无法核对启动配置，请稍后刷新状态。</p>
+                            </div>
+                            <a-button v-if="applyState.corePending" icon="dashboard" :href="basePath + 'xui/'">查看核心状态</a-button>
+                            <a-button v-else-if="pendingRestartLabels.length" type="primary" icon="poweroff" :loading="restarting" :disabled="settingsLoadError || savingSettings" @click="restartPanel">重启使配置生效</a-button>
+                            <a-button v-else icon="reload" :loading="loadingApplyState" @click="getApplyState">刷新状态</a-button>
+                        </section>
+                    </transition>
+                    <a-alert v-if="restartRequested" class="settings-reconnect-alert" type="info" show-icon message="重启请求已提交，连接待确认">
+                        <div slot="description">
+                            <p>请按实际访问方式重新连接。公网入口可能由反向代理管理。</p>
+                            <a :href="currentPanelAddress">重新打开当前地址</a>
+                            <span> · </span>
+                            <a :href="panelAddressPreview" target="_blank" rel="noopener">打开推算的面板地址</a>
+                        </div>
+                    </a-alert>
                     <transition name="list" appear>
-                        <a-card class="settings-card">
+                        <a-card v-if="settingsLoaded" class="settings-card">
                             <a-tabs v-model="activeTab">
                                 <a-tab-pane key="1" tab="面板配置">
+                                    <p class="settings-tab-note">以下设置保存后，重启面板生效。</p>
                                     <a-list class="setting-list" item-layout="horizontal">
-                                        <setting-list-item type="text" title="面板监听 IP" desc="默认留空监听所有 IP，保存并重启面板后生效" v-model="allSetting.webListen" @changed="touchSettings"></setting-list-item>
-                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口，保存并重启面板后生效" v-model="allSetting.webPort" :min="1" :max="65535" @changed="touchSettings"></setting-list-item>
-                                        <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webCertFile" @changed="touchSettings"></setting-list-item>
-                                        <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的绝对路径，保存并重启面板后生效" v-model="allSetting.webKeyFile" @changed="touchSettings"></setting-list-item>
-                                        <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾，保存并重启面板后生效" v-model="allSetting.webBasePath" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板监听 IP" desc="默认留空，监听所有 IP" v-model="allSetting.webListen" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="number" title="面板监听端口" desc="请确认防火墙已开放新端口" v-model="allSetting.webPort" :min="1" :max="65535" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板证书公钥文件路径" desc="填写以 '/' 开头的证书文件绝对路径" v-model="allSetting.webCertFile" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板证书密钥文件路径" desc="填写以 '/' 开头的密钥文件绝对路径" v-model="allSetting.webKeyFile" @changed="touchSettings"></setting-list-item>
+                                        <setting-list-item type="text" title="面板 URL 根路径" desc="必须以 '/' 开头并以 '/' 结尾" v-model="allSetting.webBasePath" @changed="touchSettings"></setting-list-item>
                                     </a-list>
                                     <section class="certificate-panel" aria-label="证书管理">
                                         <div class="certificate-panel-head">
                                             <div>
                                                 <span>证书管理</span>
-                                                <small>生成的自签名证书需保存配置并重启面板后启用。</small>
+                                                <small>此处管理面板本地证书；公网 HTTPS 可能由反向代理提供。生成后需保存并重启面板。</small>
                                             </div>
                                             <div class="certificate-panel-actions">
                                                 <a-button icon="reload" :loading="loadingCertificate" :disabled="!allSetting.webCertFile"
@@ -83,22 +107,26 @@
                                         <a-empty v-else description="尚未读取证书信息"></a-empty>
                                     </section>
                                 </a-tab-pane>
-                                <a-tab-pane key="2" tab="用户设置">
+                                <a-tab-pane key="2" tab="管理员账号">
                                     <a-form class="settings-user-form" @submit.native.prevent="updateUser">
+                                        <div class="account-submit-state" :class="{ pending: hasAccountDraft }" aria-live="polite">
+                                            <a-icon :type="accountUpdated ? 'check-circle' : 'user'"></a-icon>
+                                            [[ accountStateLabel ]]
+                                        </div>
                                         <a-form-item label="原用户名">
-                                            <a-input v-model="user.oldUsername" name="old-username" autocomplete="username"></a-input>
+                                            <a-input v-model="user.oldUsername" @input="accountUpdated = false" name="old-username" autocomplete="username"></a-input>
                                         </a-form-item>
                                         <a-form-item label="原密码">
-                                            <a-input type="password" v-model="user.oldPassword" name="old-password" autocomplete="current-password"></a-input>
+                                            <a-input type="password" v-model="user.oldPassword" @input="accountUpdated = false" name="old-password" autocomplete="current-password"></a-input>
                                         </a-form-item>
                                         <a-form-item label="新用户名">
-                                            <a-input v-model="user.newUsername" name="new-username" autocomplete="off"></a-input>
+                                            <a-input v-model="user.newUsername" @input="accountUpdated = false" name="new-username" autocomplete="off"></a-input>
                                         </a-form-item>
-                                        <a-form-item label="新密码">
-                                            <a-input type="password" v-model="user.newPassword" name="new-password" autocomplete="new-password"></a-input>
+                                        <a-form-item label="新密码" help="至少 12 个字符。保存后所有管理会话失效，需要重新登录。">
+                                            <a-input type="password" v-model="user.newPassword" @input="accountUpdated = false" name="new-password" autocomplete="new-password"></a-input>
                                         </a-form-item>
                                         <a-form-item style="margin-bottom: 0">
-                                            <a-button type="primary" html-type="submit" icon="user" :loading="updatingUser">更新管理员账号</a-button>
+                                            <a-button type="primary" html-type="submit" icon="user" :loading="updatingUser" :disabled="!accountCanSubmit || settingsLoadError">更新管理员账号</a-button>
                                         </a-form-item>
                                     </a-form>
                                 </a-tab-pane>
@@ -126,23 +154,28 @@
                     </transition>
 
                     <transition name="list" appear>
-                        <section class="settings-danger-zone" aria-label="危险操作">
+                        <section v-if="settingsLoaded" class="settings-danger-zone" aria-label="危险操作">
                             <div class="danger-zone-copy">
                                 <div class="danger-zone-icon"><a-icon type="poweroff"></a-icon></div>
                                 <div>
                                     <div class="danger-zone-label">危险操作</div>
                                     <h2>重启面板服务</h2>
-                                    <p>重启会短暂中断控制面板连接。如果修改了端口、证书或访问路径，请先确认新地址可访问。</p>
+                                    <p>重启会短暂中断控制面板连接。</p>
+                                    <div class="panel-address-preview">
+                                        <span>按已保存配置推算的地址</span>
+                                        <a :href="panelAddressPreview" target="_blank" rel="noopener">[[ panelAddressPreview ]]</a>
+                                        <small>实际公网入口可能由反向代理管理，请按实际访问方式连接。</small>
+                                    </div>
                                 </div>
                             </div>
                             <a-button type="danger" icon="poweroff" :loading="restarting"
-                                      :disabled="!saveBtnDisable || spinning || savingSettings" @click="restartPanel">
+                                      :disabled="!saveBtnDisable || spinning || savingSettings || settingsLoadError || restartRequested" @click="restartPanel">
                                 [[ restarting ? '正在重启…' : '重启面板' ]]
                             </a-button>
                         </section>
                     </transition>
                     <transition name="list">
-                        <aside class="settings-pending-bar" v-if="!saveBtnDisable" aria-live="polite">
+                        <aside class="settings-pending-bar" v-if="settingsLoaded && !saveBtnDisable" aria-live="polite">
                             <div class="settings-pending-copy">
                                 <a-icon type="edit"></a-icon>
                                 <div>
@@ -188,6 +221,7 @@
         delimiters: ['[[', ']]'],
         el: '#app',
         data: {
+            basePath,
             siderDrawer,
             spinning: false,
             oldAllSetting: new AllSetting(),
@@ -197,6 +231,13 @@
             savingSettings: false,
             restarting: false,
             settingsLoadError: false,
+            settingsLoaded: false,
+            applyState: {known: false, pendingRestartKeys: [], trafficPending: false, corePending: false},
+            loadingApplyState: false,
+            applyStateRequest: 0,
+            applyStateTimer: null,
+            restartRequested: false,
+            accountUpdated: false,
             activeTab: '1',
             settingsRevision: 0,
             loadingCertificate: false,
@@ -250,17 +291,51 @@
             },
             async getAllSetting(showLoading = true) {
                 if (showLoading) this.loading(true);
-                const msg = await HttpUtil.post("/xui/setting/all");
-                if (showLoading) this.loading(false);
-                if (msg.success && this.hasCompleteSettingData(msg.obj)) {
+                try {
+                    const msg = await HttpUtil.post('/xui/setting/all');
+                    if (!msg.success || !this.hasCompleteSettingData(msg.obj)) {
+                        this.settingsLoadError = true;
+                        return false;
+                    }
                     this.applyAllSetting(msg.obj);
-                    await this.loadCertificateInfo(false);
+                    this.settingsLoaded = true;
                     this.settingsLoadError = false;
+                    await Promise.all([this.loadCertificateInfo(false), this.getApplyState()]);
                     return true;
-                } else {
+                } catch (error) {
                     this.settingsLoadError = true;
                     return false;
+                } finally {
+                    if (showLoading) this.loading(false);
                 }
+            },
+            async getApplyState() {
+                if (document.hidden) return;
+                const request = ++this.applyStateRequest;
+                window.clearTimeout(this.applyStateTimer);
+                this.loadingApplyState = true;
+                try {
+                    const msg = await HttpUtil.post('/xui/setting/applyState');
+                    if (request !== this.applyStateRequest) return;
+                    const state = msg && msg.obj;
+                    const restartKeys = ['webListen', 'webPort', 'webCertFile', 'webKeyFile', 'webBasePath', 'xrayTemplateConfig', 'timeLocation'];
+                    if (msg.success && state && state.known === true && Array.isArray(state.pendingRestartKeys) && state.pendingRestartKeys.every(key => restartKeys.includes(key)) && typeof state.trafficPending === 'boolean' && typeof state.corePending === 'boolean') {
+                        this.applyState = {known: true, pendingRestartKeys: state.pendingRestartKeys, trafficPending: state.trafficPending, corePending: state.corePending};
+                    } else {
+                        this.applyState = {known: false, pendingRestartKeys: [], trafficPending: false, corePending: false};
+                    }
+                } catch (error) {
+                    if (request === this.applyStateRequest) this.applyState = {known: false, pendingRestartKeys: [], trafficPending: false, corePending: false};
+                } finally {
+                    if (request === this.applyStateRequest) {
+                        this.loadingApplyState = false;
+                        if ((this.applyState.trafficPending || this.applyState.corePending) && !this.restartRequested && !document.hidden) this.applyStateTimer = window.setTimeout(() => this.getApplyState(), 3000);
+                    }
+                }
+            },
+            handleApplyStateVisibility() {
+                window.clearTimeout(this.applyStateTimer);
+                if (!document.hidden && this.settingsLoaded && !this.restartRequested && (!this.applyState.known || this.applyState.corePending || this.applyState.trafficPending)) this.getApplyState();
             },
             async loadCertificateInfo(showMessage = true) {
                 if (ObjectUtil.isEmpty(this.allSetting.webCertFile)) {
@@ -268,16 +343,20 @@
                     return false;
                 }
                 this.loadingCertificate = true;
-                const msg = await HttpUtil.post('/xui/setting/certificateInfo', {certFile: this.allSetting.webCertFile});
-                this.loadingCertificate = false;
-                if (msg.success) {
-                    this.certificateInfo = msg.obj;
-                    return true;
+                try {
+                    const msg = await HttpUtil.post('/xui/setting/certificateInfo', {certFile: this.allSetting.webCertFile});
+                    if (msg.success) {
+                        this.certificateInfo = msg.obj;
+                        return true;
+                    }
+                    if (!showMessage) this.certificateInfo = null;
+                    return false;
+                } catch (error) {
+                    if (!showMessage) this.certificateInfo = null;
+                    return false;
+                } finally {
+                    this.loadingCertificate = false;
                 }
-                if (!showMessage) {
-                    this.certificateInfo = null;
-                }
-                return false;
             },
             openCertificateModal() {
                 this.certificateModal.commonName = location.hostname;
@@ -343,7 +422,7 @@
                 });
             },
             async updateAllSetting() {
-                if (this.savingSettings || this.saveBtnDisable) {
+                if (this.savingSettings || this.saveBtnDisable || !this.settingsLoaded || this.settingsLoadError) {
                     return;
                 }
                 const validationError = this.validateSettings();
@@ -364,14 +443,27 @@
                 }
                 const submittedSetting = this.normalizeAllSetting(this.allSetting);
                 this.savingSettings = true;
-                const msg = await HttpUtil.post("/xui/setting/update", submittedSetting);
-                this.savingSettings = false;
+                window.clearTimeout(this.applyStateTimer);
+                this.applyStateRequest += 1;
+                this.loadingApplyState = false;
+                let msg;
+                try {
+                    msg = await HttpUtil.post('/xui/setting/update', submittedSetting);
+                } catch (error) {
+                    this.$message.error('保存失败，请检查连接后重试；当前更改已保留。');
+                    return;
+                } finally {
+                    this.savingSettings = false;
+                }
                 if (msg.success) {
+                    this.applyState = {known: false, pendingRestartKeys: [], trafficPending: false, corePending: false};
+                    this.restartRequested = false;
                     this.applyAllSetting(submittedSetting);
                     const readBackSucceeded = await this.getAllSetting(false);
                     if (!readBackSucceeded) {
                         this.applyAllSetting(submittedSetting);
                         this.$message.warning('设置已保存，暂时无法重新读取服务器配置');
+                        await this.getApplyState();
                     }
                 }
             },
@@ -390,21 +482,34 @@
                 }
             },
             async updateUser() {
-                if (this.updatingUser) {
+                if (this.updatingUser || this.settingsLoadError) return;
+                if (!this.accountCanSubmit) {
+                    this.$message.error('请填写原账号、原密码及新的管理员账号和密码。');
                     return;
                 }
                 this.updatingUser = true;
-                const msg = await HttpUtil.post("/xui/setting/updateUser", this.user);
-                this.updatingUser = false;
-                if (msg.success) {
-                    this.user = {};
+                this.accountUpdated = false;
+                try {
+                    const msg = await HttpUtil.post('/xui/setting/updateUser', this.user);
+                    if (msg.success) {
+                        this.user = {};
+                        this.accountUpdated = true;
+                        location.href = basePath;
+                    }
+                } catch (error) {
+                    this.$message.error('管理员账号更新失败，当前填写内容已保留。');
+                } finally {
+                    this.updatingUser = false;
                 }
             },
             async restartPanel() {
-                if (this.restarting) return;
+                if (this.restarting || this.restartRequested || !this.settingsLoaded || this.settingsLoadError || !this.saveBtnDisable || this.savingSettings) return;
+                const connectivityPending = this.pendingConnectivityChange;
                 const confirmed = await this.confirmDialog({
                     title: '确认重启面板？',
-                    content: '面板将在 3 秒后重启，当前管理连接会短暂中断。请确保已保存配置，并且保留服务器独立恢复通道。',
+                    content: connectivityPending
+                        ? `面板将在 3 秒后重启。按已保存配置推算的地址：${this.panelAddressPreview}。实际公网入口可能由反向代理管理，请保留当前地址和服务器恢复通道；页面不会自动跳转。`
+                        : '面板将在 3 秒后重启，当前管理连接会短暂中断。请确保已保存配置，并保留服务器独立恢复通道。',
                     okText: '确认重启',
                     okType: 'danger',
                     cancelText: '取消',
@@ -413,8 +518,21 @@
                     return;
                 }
                 this.restarting = true;
-                const msg = await HttpUtil.post("/xui/setting/restartPanel");
+                let msg;
+                try {
+                    msg = await HttpUtil.post('/xui/setting/restartPanel');
+                } catch (error) {
+                    this.restarting = false;
+                    this.$message.error('未能确认重启结果，请检查连接状态。');
+                    return;
+                }
                 if (msg.success) {
+                    if (connectivityPending) {
+                        this.restartRequested = true;
+                        this.restarting = false;
+                        window.clearTimeout(this.applyStateTimer);
+                        return;
+                    }
                     this.loading(true);
                     await PromiseUtil.sleep(5000);
                     location.reload();
@@ -431,11 +549,63 @@
             handleKeyboardShortcut(event) {
                 if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
                     event.preventDefault();
-                    if (!this.saveBtnDisable && !this.savingSettings) this.updateAllSetting();
+                    if (this.activeTab === '2' && this.hasAccountDraft) this.updateUser();
+                    else if (!this.saveBtnDisable && !this.savingSettings) this.updateAllSetting();
                 }
             }
         },
         computed: {
+            settingsStateLabel() {
+                if (!this.settingsLoaded) return this.settingsLoadError ? '配置暂不可用' : '正在读取配置…';
+                if (!this.saveBtnDisable) return `${this.changedSettingLabels.length} 项待保存`;
+                if (this.settingsLoadError) return '已保存配置待确认';
+                if (this.restartRequested) return '已请求重启，连接待确认';
+                if (!this.applyState.known) return this.loadingApplyState ? '正在核对生效状态…' : '生效状态待确认';
+                if (this.applyState.corePending) return '核心配置尚未应用';
+                if (this.pendingRestartLabels.length) return '已保存，待重启生效';
+                if (this.applyState.trafficPending) return '已保存，流量更新中';
+                return '启动配置已同步';
+            },
+            settingsStateTone() {
+                if (this.settingsLoaded && (!this.saveBtnDisable || this.pendingRestartLabels.length || this.applyState.corePending || this.applyState.trafficPending)) return 'pending';
+                return this.settingsLoaded && !this.settingsLoadError && this.applyState.known && !this.restartRequested ? 'saved' : 'neutral';
+            },
+            settingsStateIcon() {
+                if (!this.saveBtnDisable) return 'edit';
+                if (this.settingsStateTone === 'saved') return 'check-circle';
+                return this.loadingApplyState || !this.settingsLoaded ? 'sync' : 'clock-circle';
+            },
+            pendingRestartLabels() {
+                return this.applyState.pendingRestartKeys.map(key => this.settingLabels[key]).filter(Boolean);
+            },
+            pendingConnectivityChange() {
+                const keys = ['webListen', 'webPort', 'webCertFile', 'webKeyFile', 'webBasePath'];
+                return !this.applyState.known || this.applyState.pendingRestartKeys.some(key => keys.includes(key));
+            },
+            currentPanelAddress() {
+                return location.href;
+            },
+            panelAddressPreview() {
+                const saved = this.oldAllSetting;
+                const address = new URL(location.href);
+                address.protocol = saved.webCertFile && saved.webKeyFile ? 'https:' : 'http:';
+                address.port = String(saved.webPort);
+                address.pathname = saved.webBasePath || '/';
+                address.search = '';
+                address.hash = '';
+                return address.toString();
+            },
+            hasAccountDraft() {
+                return ['oldUsername', 'oldPassword', 'newUsername', 'newPassword'].some(key => !!this.user[key]);
+            },
+            accountCanSubmit() {
+                return ['oldUsername', 'oldPassword', 'newUsername', 'newPassword'].every(key => typeof this.user[key] === 'string' && this.user[key].length > 0);
+            },
+            accountStateLabel() {
+                if (this.updatingUser) return '正在更新管理员账号…';
+                if (this.hasAccountDraft) return '管理员账号有未提交的更改';
+                return this.accountUpdated ? '管理员账号已更新' : '管理员账号单独提交，更新成功后立即生效';
+            },
             saveBtnDisable() {
                 return this.changedSettingKeys.length === 0;
             },
@@ -476,9 +646,9 @@
             certificateStatus() {
                 const hasCert = !ObjectUtil.isEmpty(this.allSetting.webCertFile);
                 const hasKey = !ObjectUtil.isEmpty(this.allSetting.webKeyFile);
-                if (hasCert && hasKey) return '已配置 HTTPS';
+                if (hasCert && hasKey) return '证书路径已配置';
                 if (hasCert || hasKey) return '证书配置不完整';
-                return '未配置证书';
+                return '未配置面板证书';
             },
             certificateFingerprint() {
                 const fingerprint = this.certificateInfo && this.certificateInfo.fingerprint;
@@ -499,9 +669,10 @@
             const tabs = {panel: '1', account: '2', xray: '3', traffic: '4', other: '5'};
             this.activeTab = tabs[new URLSearchParams(location.search).get('tab')] || '1';
             this.syncActiveTabToUrl();
+            document.addEventListener('visibilitychange', this.handleApplyStateVisibility);
             await this.getAllSetting();
             this.beforeUnloadHandler = event => {
-                if (this.saveBtnDisable) {
+                if (this.saveBtnDisable && !this.hasAccountDraft) {
                     return;
                 }
                 event.preventDefault();
@@ -511,8 +682,11 @@
             document.addEventListener('keydown', this.handleKeyboardShortcut);
         },
         beforeDestroy() {
+            window.clearTimeout(this.applyStateTimer);
+            this.applyStateRequest += 1;
             window.removeEventListener('beforeunload', this.beforeUnloadHandler);
             document.removeEventListener('keydown', this.handleKeyboardShortcut);
+            document.removeEventListener('visibilitychange', this.handleApplyStateVisibility);
         },
     });
 

@@ -1,8 +1,13 @@
 package service
 
 import (
+	"errors"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+	"x-ui/database"
 )
 
 func TestTrafficCounterDelta(t *testing.T) {
@@ -114,20 +119,32 @@ func TestTrafficDailySeriesReturnsRollingTwoWeeks(t *testing.T) {
 	location := time.FixedZone("UTC+8", 8*60*60)
 	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, location)
 	got := trafficDailySeries(
-		map[string]uint64{"2026-08-31": 30, "2026-09-01": 50},
 		map[string]uint64{"2026-08-31": 10, "2026-09-01": 20},
-		map[string]uint64{"2026-08-31": 20, "2026-09-01": 30},
+		map[string]uint64{"2026-08-31": 10, "2026-09-01": 20},
+		nil,
 		now,
 		14,
 	)
 	if len(got) != 14 || got[0].Date != "2026-08-19" || got[13].Date != "2026-09-01" {
 		t.Fatalf("trafficDailySeries() returned unexpected range: %#v", got)
 	}
-	if got[12].Used != 30 || got[12].Up != 10 || got[12].Down != 20 {
-		t.Fatalf("trafficDailySeries() lost upload/download detail: %#v", got[12])
+	if got[12].Used != 10 || got[12].Up != 10 || got[12].Down != 0 {
+		t.Fatalf("trafficDailySeries() should expose upload-only usage: %#v", got[12])
 	}
 	if got[0].Used != 0 {
 		t.Fatalf("trafficDailySeries() should fill missing dates with zero: %#v", got[0])
+	}
+}
+
+func TestTrafficDailyTotalUsesUploadHistory(t *testing.T) {
+	daily := map[string]uint64{"2026-09-01": 100, "2026-09-02": 250}
+	if got := trafficDailyTotal(daily); got != 350 {
+		t.Fatalf("trafficDailyTotal() = %d, want 350", got)
+	}
+	cloned := cloneTrafficDaily(daily)
+	cloned["2026-09-01"] = 999
+	if daily["2026-09-01"] != 100 {
+		t.Fatal("cloneTrafficDaily() should not alias the source map")
 	}
 }
 
@@ -172,5 +189,116 @@ func TestTrafficForecast(t *testing.T) {
 	average, projected, confidence = trafficForecast(300, nil, now, nextReset)
 	if average != 0 || projected != 300 || confidence != "insufficient" {
 		t.Fatalf("trafficForecast() without history = (%d, %d, %q)", average, projected, confidence)
+	}
+}
+
+func TestMonthlyTrafficReadsCountersInsideLock(t *testing.T) {
+	s := &ServerService{}
+	s.trafficMu.Lock()
+	observed := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	readErr := errors.New("observation failed")
+	go func() {
+		_, err := s.refreshMonthlyTraffic(func() (uint64, uint64, error) {
+			observed <- struct{}{}
+			return 0, 0, readErr
+		})
+		done <- err
+	}()
+	select {
+	case <-observed:
+		s.trafficMu.Unlock()
+		<-done
+		t.Fatal("OS counter was observed outside the accounting lock")
+	case <-time.After(100 * time.Millisecond):
+	}
+	s.trafficMu.Unlock()
+	if err := <-done; err != readErr {
+		t.Fatalf("error = %v", err)
+	}
+	// Failed observations must release the lock and leave state untouched.
+	if s.trafficState != nil {
+		t.Fatal("failed read changed state")
+	}
+}
+
+func TestMonthlyTrafficConcurrentObservations(t *testing.T) {
+	if err := database.InitDB(filepath.Join(t.TempDir(), "traffic.db")); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	date := now.Format("2006-01-02")
+	const baseline = uint64(278000000000)
+	s := &ServerService{
+		trafficLocation: now.Location(), trafficConfigRefresh: now,
+		trafficLimitGB: 1024, trafficResetDay: 1,
+		trafficState: &MonthlyTrafficState{Initialized: true,
+			PeriodStart: trafficPeriodStart(now, 1).Format("2006-01-02"),
+			LastSent:    baseline, DailyUpload: map[string]uint64{date: 10},
+			DailyEstimated: map[string]bool{date: true}},
+	}
+	var counter uint64 = baseline
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := s.refreshMonthlyTraffic(func() (uint64, uint64, error) {
+				n := atomic.AddUint64(&counter, 1)
+				time.Sleep(time.Millisecond)
+				return n, 0, nil
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if s.trafficState.UsedBytes != 74 {
+		t.Fatalf("usage = %d, want 74", s.trafficState.UsedBytes)
+	}
+	if !s.trafficSnapshot.Daily[len(s.trafficSnapshot.Daily)-1].Estimated {
+		t.Fatal("lost recovery marker")
+	}
+	persisted, err := s.settingService.GetMonthlyTrafficState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.UsedBytes != 74 || !persisted.DailyEstimated[date] {
+		t.Fatalf("unexpected persisted state: %+v", persisted)
+	}
+}
+
+func TestMonthlyTrafficTodayUsesSeriesTimeZone(t *testing.T) {
+	if err := database.InitDB(filepath.Join(t.TempDir(), "today.db")); err != nil {
+		t.Fatal(err)
+	}
+	settings := SettingService{}
+	for _, zone := range []string{"Pacific/Kiritimati", "America/Adak"} {
+		location, err := time.LoadLocation(zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := settings.setString("timeLocation", zone); err != nil {
+			t.Fatal(err)
+		}
+		for _, limit := range []string{"100", "0"} {
+			if err := settings.setString("trafficLimitGB", limit); err != nil {
+				t.Fatal(err)
+			}
+			service := ServerService{}
+			before := time.Now().In(location).Format("2006-01-02")
+			view, err := service.refreshMonthlyTraffic(func() (uint64, uint64, error) { return 100, 200, nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := time.Now().In(location).Format("2006-01-02")
+			if view.Today != before && view.Today != after {
+				t.Fatalf("today is not the server-series date: %s", view.Today)
+			}
+			if len(view.Daily) > 0 && view.Daily[len(view.Daily)-1].Date != view.Today {
+				t.Fatal("today marker must match the sampled daily series")
+			}
+		}
 	}
 }

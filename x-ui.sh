@@ -112,7 +112,25 @@ run_project_installer() {
         return 1
     fi
 
+    guard_compatible_update "$installer" || return 1
     bash "$installer"
+}
+
+guard_compatible_update() {
+    [[ -f /etc/x-ui/x-ui.db ]] || return 0
+    local current_help
+    if [[ ! -x /usr/local/x-ui/x-ui ]] || ! current_help=$(/usr/local/x-ui/x-ui setting -help 2>&1); then
+        LOGE "无法核验当前认证版本，已停止自动安装或更新，请使用经过验证的发布流程。"
+        return 1
+    fi
+    if [[ "$current_help" == *"-password-stdin"* ]]; then
+        if [[ -n "${1:-}" ]] && grep -Fq -- '-password-stdin' "$1"; then
+            return 0
+        fi
+        LOGE "此实例已启用安全认证，旧安装器和脚本更新可能破坏登录。请使用兼容密码哈希的发布流程。"
+        return 1
+    fi
+    return 0
 }
 
 install() {
@@ -120,7 +138,7 @@ install() {
 }
 
 update() {
-    confirm "将从项目仓库构建并更新面板，现有面板数据会保留。是否继续?" "n"
+    confirm "将下载项目发行包并更新面板，现有面板数据会保留。是否继续?" "n"
     if [[ $? != 0 ]]; then
         LOGE "已取消"
         if [[ $# == 0 ]]; then
@@ -159,15 +177,17 @@ uninstall() {
 }
 
 reset_user() {
-    confirm "确定要将用户名和密码重置为 admin 吗" "n"
+    confirm "确定要重置管理员账号并生成随机密码吗（现有会话将失效）" "n"
     if [[ $? != 0 ]]; then
         if [[ $# == 0 ]]; then
             show_menu
         fi
         return 0
     fi
-    /usr/local/x-ui/x-ui setting -username admin -password admin
-    echo -e "用户名和密码已重置为 ${green}admin${plain}，现在请重启面板"
+    local reset_password
+    reset_password=$(head -c 24 /dev/urandom | base64 | tr -d '\n') || return 1
+    printf '%s' "$reset_password" | /usr/local/x-ui/x-ui setting -username admin -password-stdin || return 1
+    echo -e "管理员为 ${green}admin${plain}，新密码为 ${green}${reset_password}${plain}，请妥善保管。"
     confirm_restart
 }
 
@@ -315,6 +335,7 @@ install_bbr() {
 }
 
 update_shell() {
+    guard_compatible_update || return 1
     wget -O /usr/bin/x-ui -N --no-check-certificate https://github.com/FranzKafkaYu/x-ui/raw/master/x-ui.sh
     if [[ $? != 0 ]]; then
         echo ""

@@ -15,11 +15,7 @@ func NewCheckInboundJob() *CheckInboundJob {
 }
 
 func (j *CheckInboundJob) Run() {
-	count, err := j.inboundService.DisableInvalidInbounds()
-	if err != nil {
-		logger.Warning("disable invalid inbounds err:", err)
-	} else if count > 0 {
-		logger.Debugf("disabled %v inbounds", count)
-		j.xrayService.SetToNeedRestart()
+	if err := j.xrayService.RefreshInboundPolicies(); err != nil {
+		logger.Warning("refresh inbound and user policies failed:", err)
 	}
 }

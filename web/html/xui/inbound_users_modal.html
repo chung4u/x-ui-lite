@@ -1,18 +1,44 @@
 {{define "inboundUsersModal"}}
-<a-modal id="inbound-users-modal" :visible="userModal.visible" title="用户与下载"
-         :width="760" :closable="true" :mask-closable="false" @cancel="userModal.requestClose">
+<a-modal id="inbound-users-modal" :visible="userModal.visible" title="用户管理"
+         :width="960" :closable="true" :mask-closable="false" @cancel="userModal.requestClose">
     <div class="inbound-users-modal-head">
         <div>
             <strong>[[ userModal.dbInbound.remark || '未命名入站' ]]</strong>
-            <span>端口 [[ userModal.dbInbound.port ]] · VLESS</span>
+            <span>[[ userModal.dbInbound.connectionLabel ]] · [[ userModal.dbInbound.transportLabel ]]</span>
+            <div v-if="userModal.dbInbound.isManagedExternal">
+                <a-tooltip :title="runtimeError || '用户或额度保存后可能短暂重连'">
+                    <a-tag :color="runtimeColor" class="managed-runtime-tag">[[ runtimeLabel ]]</a-tag>
+                </a-tooltip>
+            </div>
         </div>
-        <a-button class="inbound-users-add-btn" @click="userModal.addUser">
+        <a-button class="inbound-users-add-btn" :loading="userModal.newUserLoading" :disabled="userModal.confirmLoading || userModal.groupSaving" @click="userModal.addUser">
             <span class="inbound-users-add-icon"><a-icon type="user-add"></a-icon></span>
             <span class="inbound-users-add-label">新增用户</span>
         </a-button>
     </div>
+    <a-alert v-if="userModal.newUserError" type="error" show-icon :message="userModal.newUserError" class="user-policy-alert"></a-alert>
+    <a-alert v-if="userModal.policyError" type="warning" show-icon message="额度与用户状态读取失败" class="user-policy-alert">
+        <a-button slot="description" size="small" @click="userModal.loadPolicies()">重新读取</a-button>
+    </a-alert>
+    <section v-if="userModal.groupEditor" class="quota-group-editor" aria-label="额度设置">
+        <div class="quota-group-editor-head">
+            <strong>[[ userModal.groupEditor.id ? '编辑额度' : '新建额度' ]]</strong>
+            <span v-if="userModal.groupEditor.id">[[ userModal.groupMemberCount(userModal.groupEditor.id) ]] 位用户共用</span>
+        </div>
+        <div class="quota-group-editor-grid">
+            <label><span>额度名称</span><a-input v-model.trim="userModal.groupEditor.name" aria-label="额度名称"></a-input></label>
+            <label><span>月度额度 (GB，0 为不限额)</span><a-input-number v-model="userModal.groupEditor.totalGB" :min="0" aria-label="月度额度"></a-input-number></label>
+            <label><span>到期时间</span><a-date-picker v-model="userModal.groupEditor.expiryValue" show-time format="YYYY-MM-DD HH:mm:ss" placeholder="无限期" aria-label="额度到期时间"></a-date-picker></label>
+            <label class="quota-group-enable"><span>启用此额度</span><a-switch v-model="userModal.groupEditor.enabled"></a-switch></label>
+        </div>
+        <div class="quota-group-editor-actions">
+            <a-button @click="userModal.groupEditor = null" :disabled="userModal.groupSaving">取消</a-button>
+            <a-button type="primary" :loading="userModal.groupSaving" @click="userModal.saveGroup()">保存额度</a-button>
+        </div>
+    </section>
+    <a-spin :spinning="userModal.policyLoading">
     <div class="inbound-user-list">
-        <article class="inbound-user-item" v-for="(user, index) in userModal.users" :key="user.id">
+        <article class="inbound-user-item" :class="{ 'managed-user-card': userModal.dbInbound.isManagedExternal }" v-for="(user, index) in userModal.users" :key="user.id">
             <div class="inbound-user-index">[[ index + 1 ]]</div>
             <div class="inbound-user-main">
                 <div class="inbound-user-fields">
@@ -20,25 +46,62 @@
                         <span>用户名称</span>
                         <a-input v-model.trim="user.email" :aria-label="`用户 ${index + 1} 名称`" placeholder="例如：iPhone"></a-input>
                     </label>
-                    <label class="inbound-user-field inbound-user-uuid-field">
+                    <details v-if="userModal.dbInbound.isManagedExternal" class="inbound-user-uuid-details" :open="!userModal.savedClientIds.includes(user.id)">
+                        <summary>UUID</summary>
+                        <a-input v-model.trim="user.id" :read-only="userModal.dbInbound.isManagedExternal && userModal.savedClientIds.includes(user.id)" :aria-label="`用户 ${index + 1} UUID`" placeholder="UUID"></a-input>
+                    </details>
+                    <label v-else class="inbound-user-field inbound-user-uuid-field">
                         <span>UUID</span>
                         <a-input v-model.trim="user.id" :aria-label="`用户 ${index + 1} UUID`" placeholder="UUID"></a-input>
                     </label>
                 </div>
+                <div v-if="userModal.dbInbound.isManagedExternal" class="user-policy-row">
+                    <div class="user-policy-status">
+                        <span>启用</span>
+                        <a-switch :checked="userModal.policyFor(user.id).enabled" :loading="userModal.isLoading(user.id)"
+                                  :disabled="!userModal.canEditPolicy(user.id)" :aria-label="`${user.email || '用户'}启用状态`"
+                                  @change="enabled => userModal.updatePolicy(user.id, {enabled})"></a-switch>
+                        <small :class="{ 'user-policy-unavailable': !userModal.policyFor(user.id).effectiveEnabled }">[[ userModal.policyStatus(user.id) ]]</small>
+                    </div>
+                    <div class="user-policy-traffic">
+                        <span>本周期流量</span>
+                        <strong v-if="userModal.hasPolicy(user.id)">↑ [[ sizeFormat(userModal.policyFor(user.id).up || 0) ]] · ↓ [[ sizeFormat(userModal.policyFor(user.id).down || 0) ]]</strong>
+                        <strong v-else>[[ userModal.savedClientIds.includes(user.id) ? '待获取' : '保存后开始统计' ]]</strong>
+                    </div>
+                    <div class="user-policy-quota">
+                        <span>额度</span>
+                        <a-select :value="userModal.policyFor(user.id).groupId || 0" :disabled="!userModal.canEditPolicy(user.id)"
+                                  :aria-label="`${user.email || '用户'}额度`" @change="groupId => userModal.updatePolicy(user.id, {groupId})">
+                            <a-select-option :value="0">不限额</a-select-option>
+                            <a-select-option v-for="group in userModal.groups" :key="group.id" :value="group.id">[[ group.name ]]</a-select-option>
+                        </a-select>
+                        <small>[[ userModal.groupSummary(user.id) ]]</small>
+                    </div>
+                    <div class="user-policy-expiry">
+                        <span>到期时间</span>
+                        <strong>[[ userModal.expiryLabel(user.id) ]]</strong>
+                        <div class="user-policy-group-actions">
+                            <a-button v-if="userModal.policyFor(user.id).groupId" size="small" type="link" :disabled="!userModal.canEditPolicy(user.id)" @click="userModal.editGroup(user.id)">编辑额度</a-button>
+                            <a-button size="small" type="link" :disabled="!userModal.canEditPolicy(user.id)" @click="userModal.newGroup(user.id)">新建额度</a-button>
+                        </div>
+                    </div>
+                </div>
                 <div class="inbound-user-actions">
-                    <a-button size="small" type="primary" icon="link" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.copySubscription(user, index)">复制订阅</a-button>
-                    <a-button size="small" icon="copy" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.copyLink(user, index)">复制 VLESS</a-button>
-                    <a-button size="small" icon="qrcode" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.showQrcode(user, index)">二维码</a-button>
-                    <a-button size="small" icon="download" :disabled="userModal.isDirty()" :loading="userModal.isLoading(user.id)" @click="userModal.downloadConfig(user, index)">下载配置</a-button>
+                    <a-button size="small" type="primary" icon="link" :disabled="!userModal.canExport(user.id)" :loading="userModal.isLoading(user.id)" @click="userModal.copySubscription(user, index)">复制订阅</a-button>
+                    <a-button size="small" icon="copy" :disabled="!userModal.canExport(user.id)" :loading="userModal.isLoading(user.id)" @click="userModal.copyLink(user, index)">复制单节点链接</a-button>
+                    <a-button size="small" icon="qrcode" :disabled="!userModal.canExport(user.id)" :loading="userModal.isLoading(user.id)" @click="userModal.showQrcode(user, index)">二维码</a-button>
+                    <a-button size="small" icon="download" :disabled="!userModal.canExport(user.id)" :loading="userModal.isLoading(user.id)" @click="userModal.downloadConfig(user, index)">下载 Clash 配置</a-button>
                     <a-button v-if="userModal.users.length > 1" size="small" type="link" icon="delete"
                               @click="userModal.removeUser(index)">删除</a-button>
                 </div>
             </div>
         </article>
     </div>
+    </a-spin>
     <template slot="footer">
+        <span v-if="userModal.dbInbound.isManagedExternal" class="user-policy-save-hint">状态与额度立即保存；名称和新增用户点击保存</span>
         <a-button @click="userModal.requestClose">取消</a-button>
-        <a-button type="primary" icon="save" :loading="userModal.confirmLoading" @click="userModal.save">保存</a-button>
+        <a-button type="primary" icon="save" :loading="userModal.confirmLoading" :disabled="userModal.newUserLoading" @click="userModal.save">保存</a-button>
     </template>
 </a-modal>
 <script>
@@ -50,6 +113,17 @@
         baseline: '',
         confirm: null,
         pendingUserIds: {},
+        savedClientIds: [],
+        policies: [],
+        groups: [],
+        policyLoading: false,
+        policyError: false,
+        policyRequestSeq: 0,
+        groupEditor: null,
+        groupSaving: false,
+        userSessionSeq: 0,
+        newUserLoading: false,
+        newUserError: '',
         get users() {
             const settings = this.inbound.settings;
             return settings && Array.isArray(settings.vlesses) ? settings.vlesses : [];
@@ -70,10 +144,178 @@
         isDirty() {
             return this.visible && this.baseline !== this.stateSignature();
         },
-        addUser() {
-            userModal.inbound.settings.addVless();
+        hasPolicy(clientId) {
+            return this.policies.some(item => item.clientId === clientId);
+        },
+        policyFor(clientId) {
+            return this.policies.find(item => item.clientId === clientId) || {clientId, enabled: true, groupId: 0, effectiveEnabled: false};
+        },
+        groupFor(clientId) {
+            const id = this.policyFor(clientId).groupId;
+            return this.groups.find(group => group.id === id) || null;
+        },
+        groupMemberCount(id) {
+            return this.policies.filter(item => item.groupId === id).length;
+        },
+        groupSummary(clientId) {
+            if (!this.hasPolicy(clientId)) return '';
+            const group = this.groupFor(clientId);
+            if (!group) return '个人不限额';
+            const count = this.groupMemberCount(group.id);
+            const used = sizeFormat(Number(group.up || 0) + Number(group.down || 0));
+            const limit = group.total > 0 ? sizeFormat(group.total) : '不限额';
+            return `${count > 1 ? count + ' 人共享' : '个人'} · 已用 ${used} / ${limit}`;
+        },
+        expiryLabel(clientId) {
+            if (!this.hasPolicy(clientId)) return '—';
+            const group = this.groupFor(clientId);
+            return group && group.expiryTime ? moment(group.expiryTime).format('YYYY-MM-DD HH:mm:ss') : '无限期';
+        },
+        policyStatus(clientId) {
+            if (!this.savedClientIds.includes(clientId)) return '保存后生效';
+            if (!this.hasPolicy(clientId)) return this.policyError ? '状态未知' : '读取中';
+            const policy = this.policyFor(clientId);
+            return policy.effectiveEnabled ? '可用' : (policy.reason || '已停用');
+        },
+        canEditPolicy(clientId) {
+            return !this.isDirty() && !this.policyLoading && !this.policyError && !this.groupSaving && !this.isLoading(clientId) && this.hasPolicy(clientId);
+        },
+        canExport(clientId) {
+            if (this.isDirty()) return false;
+            return !this.dbInbound.isManagedExternal || (this.canEditPolicy(clientId) && this.policyFor(clientId).effectiveEnabled);
+        },
+        async loadPolicies() {
+            if (!this.dbInbound.isManagedExternal) return;
+            const inboundId = this.dbInbound.id;
+            const requestSeq = ++this.policyRequestSeq;
+            this.policyLoading = true;
+            this.policyError = false;
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${inboundId}/userPolicies`);
+                if (requestSeq !== this.policyRequestSeq || this.dbInbound.id !== inboundId || !this.visible) return;
+                if (!msg.success || !msg.obj || !Array.isArray(msg.obj.users) || !Array.isArray(msg.obj.groups)) {
+                    this.policyError = true;
+                    this.policies = [];
+                    return;
+                }
+                this.policies = msg.obj.users;
+                this.groups = msg.obj.groups;
+            } catch (_) {
+                if (requestSeq !== this.policyRequestSeq || this.dbInbound.id !== inboundId || !this.visible) return;
+                this.policyError = true;
+                this.policies = [];
+            } finally {
+                if (requestSeq === this.policyRequestSeq && this.dbInbound.id === inboundId) this.policyLoading = false;
+            }
+        },
+        async updatePolicy(clientId, patch) {
+            if (!this.canEditPolicy(clientId)) return;
+            const old = this.policyFor(clientId);
+            this.setLoading(clientId, true);
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${this.dbInbound.id}/userPolicies/update`, {
+                    clientId, enabled: old.enabled, groupId: old.groupId || 0, ...patch,
+                });
+                if (msg.success) {
+                    await this.loadPolicies();
+                    if (typeof app.refreshRuntimeAfterSave === 'function') app.refreshRuntimeAfterSave();
+                }
+            } finally {
+                this.setLoading(clientId, false);
+            }
+        },
+        editGroup(clientId) {
+            if (!this.canEditPolicy(clientId)) return;
+            const group = this.groupFor(clientId);
+            if (!group) return;
+            this.groupEditor = {...group, totalGB: group.total / ONE_GB,
+                expiryValue: group.expiryTime ? moment(group.expiryTime) : null, assignClientId: ''};
+            this.revealGroupEditor();
+        },
+        newGroup(clientId) {
+            if (!this.canEditPolicy(clientId)) return;
+            const user = this.users.find(user => user.id === clientId);
+            this.groupEditor = {id: 0, name: `${(user && user.email) || '用户'}额度`, totalGB: 0,
+                enabled: true, expiryValue: null, assignClientId: clientId};
+            this.revealGroupEditor();
+        },
+        revealGroupEditor() {
+            if (typeof Vue.nextTick !== 'function') return;
+            Vue.nextTick(() => {
+                const editor = document.querySelector('.quota-group-editor');
+                if (editor) editor.scrollIntoView({block: 'start', behavior: 'smooth'});
+            });
+        },
+        async saveGroup() {
+            const form = this.groupEditor;
+            if (!form || this.groupSaving) return;
+            const total = Number(form.totalGB);
+            if (!form.name || !Number.isFinite(total) || total < 0 || !Number.isSafeInteger(Math.round(total * ONE_GB))) {
+                app.$message.error('请填写额度名称及有效的非负额度。');
+                return;
+            }
+            this.groupSaving = true;
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${this.dbInbound.id}/quotaGroup/update`, {
+                    id: form.id, name: form.name, total: Math.round(total * ONE_GB),
+                    expiryTime: form.expiryValue ? form.expiryValue.valueOf() : 0, enabled: form.enabled,
+                });
+                if (!msg.success) return;
+                if (form.assignClientId && msg.obj && msg.obj.id) {
+                    const policy = this.policyFor(form.assignClientId);
+                    const assigned = await HttpUtil.post(`/xui/inbound/${this.dbInbound.id}/userPolicies/update`, {
+                        clientId: form.assignClientId, enabled: policy.enabled, groupId: msg.obj.id,
+                    });
+                    if (!assigned.success) app.$message.warning('额度已创建，请在用户额度中选择它。');
+                }
+                this.groupEditor = null;
+                await this.loadPolicies();
+                if (typeof app.refreshRuntimeAfterSave === 'function') app.refreshRuntimeAfterSave();
+            } finally {
+                this.groupSaving = false;
+            }
+        },
+        async addUser() {
+            if (this.newUserLoading || this.confirmLoading || this.groupSaving) return;
+            const session = this.userSessionSeq, inbound = this.inbound;
+            this.newUserLoading = true; this.newUserError = '';
+            try {
+                let id = '';
+                try {
+                    if (window.crypto.randomUUID) id = window.crypto.randomUUID();
+                    else {
+                        const bytes = new Uint8Array(16);
+                        window.crypto.getRandomValues(bytes);
+                        bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+                        const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+                        id = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+                    }
+                } catch (_) {}
+                if (!id) {
+                    const msg = await HttpUtil.post('/xui/inbound/realityUUID');
+                    if (!msg || !msg.success || !msg.obj || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(msg.obj.clientId)) throw new Error('UUID');
+                    id = msg.obj.clientId;
+                }
+                if (session !== this.userSessionSeq || inbound !== this.inbound || !this.visible) return;
+                const first = this.users[0];
+                inbound.settings.addVless(new Inbound.VLESSSettings.VLESS(id, first ? first.flow : ''));
+            } catch (_) {
+                if (session === this.userSessionSeq && this.visible) this.newUserError = '安全用户标识生成失败，请重新点击新增用户。';
+            } finally {
+                if (session === this.userSessionSeq) this.newUserLoading = false;
+            }
         },
         removeUser(index) {
+            const user = userModal.users[index];
+            if (userModal.dbInbound.isManagedExternal && user && userModal.savedClientIds.includes(user.id)) {
+                Vue.prototype.$confirm({
+                    title: '删除此用户？',
+                    content: '保存后此用户将无法连接，原订阅停止提供配置。',
+                    okText: '从列表移除', cancelText: '取消', okType: 'danger',
+                    onOk: () => userModal.inbound.settings.delVless(index),
+                });
+                return;
+            }
             userModal.inbound.settings.delVless(index);
         },
         async getProfile(user, index) {
@@ -100,17 +342,29 @@
                 userModal.setLoading(user.id, false);
             }
         },
-        copyText(value, successMessage) {
+        async copyText(value, successMessage, showSuccess = true) {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(value);
+                    if (showSuccess) app.$message.success(successMessage);
+                    return true;
+                }
+            } catch (_) { /* Fall back when browser clipboard permission is unavailable. */ }
             const input = document.createElement('textarea');
             input.value = value;
             input.setAttribute('readonly', '');
             input.style.position = 'fixed';
             input.style.opacity = '0';
             document.body.appendChild(input);
-            input.select();
-            document.execCommand('copy');
-            document.body.removeChild(input);
-            app.$message.success(successMessage);
+            let copied = false;
+            try {
+                input.select();
+                copied = document.execCommand('copy');
+            } catch (_) { copied = false; }
+            finally { input.remove(); }
+            if (copied) { if (showSuccess) app.$message.success(successMessage); }
+            else app.$message.error('复制失败，请重试或下载配置。');
+            return copied;
         },
         async copySubscription(user) {
             const subscription = await userModal.getSubscription(user);
@@ -120,7 +374,7 @@
         async copyLink(user, index) {
             const profile = await userModal.getProfile(user, index);
             if (!profile || !profile.link) return;
-            userModal.copyText(profile.link, 'VLESS 链接已复制');
+            userModal.copyText(profile.link, '节点链接已复制');
         },
         async downloadConfig(user, index) {
             const profile = await userModal.getProfile(user, index);
@@ -139,36 +393,58 @@
         async showQrcode(user, index) {
             const profile = await userModal.getProfile(user, index);
             if (!profile || !profile.link) return;
-            qrModal.show(`${userModal.dbInbound.userDisplayName(user, index)} · 二维码`, profile.link);
+            qrModal.show(`${(profile.connection && profile.connection.name) || userModal.dbInbound.remark || userModal.dbInbound.userDisplayName(user, index)} · 二维码`, profile.link);
         },
         save() {
+            if (userModal.confirmLoading || userModal.newUserLoading) return;
+            if (userModal.groupEditor) {
+                app.$message.warning('请先保存或取消额度编辑。');
+                return;
+            }
             if (userModal.users.some(user => !String(user.id || '').trim())) {
                 app.$message.error('每位用户都需要 UUID。');
                 return;
             }
+            if (userModal.inbound.isXHTTP) userModal.users.forEach(user => { user.flow = ''; });
             ObjectUtil.execute(userModal.confirm, userModal.inbound, userModal.dbInbound);
         },
         show({dbInbound, inbound, confirm}) {
+            this.userSessionSeq++;
+            this.newUserLoading = false;
+            this.newUserError = '';
             this.dbInbound = new DBInbound(dbInbound);
             this.inbound = Inbound.fromJson(inbound.toJson());
             this.confirm = confirm;
             this.pendingUserIds = {};
+            this.savedClientIds = this.users.map(user => user.id);
+            this.policies = [];
+            this.groups = [];
+            this.groupEditor = null;
+            this.groupSaving = false;
+            this.policyError = false;
             this.visible = true;
             this.baseline = this.stateSignature();
+            this.loadPolicies();
         },
         close() {
+            this.userSessionSeq++;
+            this.newUserLoading = false;
+            this.newUserError = '';
+            this.policyRequestSeq++;
             this.visible = false;
             this.confirmLoading = false;
             this.baseline = '';
+            this.groupEditor = null;
         },
         requestClose() {
-            if (!userModal.isDirty()) {
+            if (userModal.groupSaving || userModal.confirmLoading) return;
+            if (!userModal.isDirty() && !userModal.groupEditor) {
                 userModal.close();
                 return;
             }
             Vue.prototype.$confirm({
-                title: '放弃用户更改？',
-                content: '尚未保存的用户调整将不会生效。',
+                title: '放弃未保存的更改？',
+                content: '尚未保存的用户与额度调整将不会生效。',
                 okText: '放弃更改',
                 okType: 'danger',
                 cancelText: '继续编辑',
@@ -180,7 +456,12 @@
     new Vue({
         delimiters: ['[[', ']]'],
         el: '#inbound-users-modal',
-        data: { userModal },
+        data: { userModal, sizeFormat },
+        computed: {
+            runtimeLabel() { return app.runtimeLabel; },
+            runtimeColor() { return app.runtimeColor; },
+            runtimeError() { return app.runtimeState && app.runtimeState.error; },
+        },
     });
 </script>
 {{end}}

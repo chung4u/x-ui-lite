@@ -96,6 +96,8 @@
                                             <div class="resource-value"><a-icon type="arrow-up"></a-icon> [[ compactSize(status.netIO.up) ]]/s</div>
                                         </div>
                                         <div class="resource-label">实时网速</div>
+                                        <a-progress class="resource-progress-spacer" :show-info="false" :stroke-width="7"
+                                                    :percent="0" aria-hidden="true"></a-progress>
                                         <svg class="resource-sparkline network-speed-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
                                             <polyline class="upload-line" :points="networkSpeedSparklinePoints('netUp')"></polyline>
                                         </svg>
@@ -109,6 +111,8 @@
                                             <div class="resource-value">[[ totalConnections ]]</div>
                                         </div>
                                         <div class="resource-label">网络连接</div>
+                                        <a-progress class="resource-progress-spacer" :show-info="false" :stroke-width="7"
+                                                    :percent="0" aria-hidden="true"></a-progress>
                                         <svg class="resource-sparkline violet" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
                                             <polyline :points="connectionSparklinePoints()"></polyline>
                                         </svg>
@@ -126,17 +130,17 @@
                                 <div class="monthly-traffic-icon"><a-icon type="cloud-server"></a-icon></div>
                                 <div>
                                     <div class="monthly-traffic-eyebrow">流量监控</div>
-                                    <h2 v-if="status.monthlyTraffic.enabled">剩余 [[ sizeFormat(status.monthlyTraffic.remaining) ]]</h2>
+                                    <h2 v-if="status.monthlyTraffic.enabled">剩余 <strong class="traffic-number">[[ sizeFormat(status.monthlyTraffic.remaining) ]]</strong></h2>
                                     <h2 v-else>尚未设置月度额度</h2>
                                     <p v-if="status.monthlyTraffic.enabled">
-                                        本周期已用 [[ sizeFormat(status.monthlyTraffic.used) ]] / [[ sizeFormat(status.monthlyTraffic.limit) ]]
+                                        本周期已用 <strong class="traffic-number">[[ sizeFormat(status.monthlyTraffic.used) ]]</strong> / <strong class="traffic-number">[[ sizeFormat(status.monthlyTraffic.limit) ]]</strong>
                                     </p>
                                     <p v-else>设置服务器每月总流量后，系统将持续显示已用与剩余额度。</p>
                                 </div>
                             </div>
                             <div class="monthly-traffic-meter" v-if="status.monthlyTraffic.enabled">
                                 <div class="monthly-traffic-progress-head">
-                                    <span>已用 [[ toFixed(status.monthlyTraffic.percent, 1) ]]%</span>
+                                    <span>已用 <strong class="traffic-number">[[ toFixed(status.monthlyTraffic.percent, 1) ]]%</strong></span>
                                 </div>
                                 <a-progress :show-info="false" :stroke-width="9" :percent="status.monthlyTraffic.percent"
                                             :stroke-color="monthlyTrafficColor"></a-progress>
@@ -151,7 +155,7 @@
                                     <div class="traffic-forecast-copy">
                                         <span>预计月底用量</span>
                                         <strong>[[ forecastUsageLabel ]]</strong>
-                                        <small>按当前日均 [[ sizeFormat(status.monthlyTraffic.averageDaily) ]] 估算 · [[ forecastConfidenceLabel ]]</small>
+                                        <small>按当前日均 <strong class="traffic-number">[[ sizeFormat(status.monthlyTraffic.averageDaily) ]]</strong> 估算</small>
                                     </div>
                                     <a-tag :color="forecastStatus.color">[[ forecastStatus.label ]]</a-tag>
                                 </div>
@@ -162,32 +166,24 @@
                                         </div>
                                         <div class="daily-traffic-summary">
                                             <strong>[[ trafficHistoryRange ]]</strong>
-                                            <small>合计 [[ compactSize(trafficTwoWeekTotal) ]] · 日均 [[ compactSize(trafficTwoWeekAverage) ]]</small>
+                                            <small>合计 <strong class="traffic-number">[[ compactSize(trafficTwoWeekTotal) ]]</strong> · 日均 <strong class="traffic-number">[[ compactSize(trafficTwoWeekAverage) ]]</strong></small>
                                         </div>
-                                    </div>
-                                    <div class="daily-traffic-legend" aria-hidden="true">
-                                        <span class="upload">上传</span>
-                                        <span class="download">下载</span>
                                     </div>
                                     <div class="daily-traffic-chart" v-if="status.monthlyTraffic.daily.length > 0"
                                          role="img" :aria-label="trafficTrendAriaLabel">
-                                        <div class="daily-traffic-column" v-for="day in status.monthlyTraffic.daily" :key="day.date"
-                                             :title="`${moment(day.date).format('MM 月 DD 日')}：上传 ${sizeFormat(day.up)}，下载 ${sizeFormat(day.down)}，合计 ${sizeFormat(day.used)}`">
-                                            <span class="daily-traffic-value">[[ compactSize(day.used) ]]</span>
+                                        <div class="daily-traffic-column" v-for="day in status.monthlyTraffic.daily" :key="day.date" :class="{ 'is-today': isTodayTrafficDay(day) }"
+                                             :title="`${moment(day.date).format('MM 月 DD 日')}：${day.estimated ? '约 ' : ''}${sizeFormat(day.up)}${day.estimated ? '（按运行采样恢复）' : ''}${isTodayTrafficDay(day) ? ' · 今日持续更新' : ''}`">
+                                            <strong class="daily-traffic-value">[[ day.estimated ? '约 ' : '' ]][[ compactSize(day.up) ]]</strong>
                                             <span class="daily-traffic-bar-track">
-                                                <span class="daily-traffic-bar" :style="{ height: trafficBarHeight(day.used) }">
-                                                    <i v-if="Number(day.used || 0) > 0 && Number(day.up || 0) + Number(day.down || 0) === 0"
-                                                       class="legacy-total"></i>
-                                                    <template v-else>
-                                                        <i class="download" :style="{ height: trafficPartHeight(day.down, day.used) }"></i>
-                                                        <i class="upload" :style="{ height: trafficPartHeight(day.up, day.used) }"></i>
-                                                    </template>
+                                                <span class="daily-traffic-bar" :style="{ height: trafficBarHeight(day.up) }">
+                                                    <i class="upload"></i>
                                                 </span>
                                             </span>
-                                            <span class="daily-traffic-date">[[ moment(day.date).format('DD') ]]</span>
+                                            <span class="daily-traffic-date">[[ isTodayTrafficDay(day) ? '今天' : moment(day.date).format('DD') ]]</span>
                                         </div>
                                     </div>
                                     <a-empty v-else description="今日开始记录，稍后将生成趋势"></a-empty>
+                                    <small v-if="status.monthlyTraffic.daily.some(day => day.estimated)">标注“约”的日期由运行采样恢复，合计及日均包含估算值。</small>
                                 </div>
                             </div>
                             <a-button v-else type="primary" icon="setting" @click="location.href = basePath + 'xui/setting?tab=traffic'">
@@ -197,7 +193,7 @@
                     </transition>
 
                     <transition name="list" appear>
-                        <section aria-label="运行概览">
+                        <section class="system-overview" aria-label="运行概览">
                             <a-row :gutter="16" type="flex">
                                 <a-col :xs="24" :md="12" :xl="8" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
@@ -279,6 +275,7 @@
                                     </a-card>
                                 </a-col>
                             </a-row>
+                            <runtime-trend></runtime-trend>
                         </section>
                     </transition>
                 </div>
@@ -364,6 +361,7 @@
     class Status {
         constructor(data) {
             this.cpu = new CurTotal(0, 0);
+            this.cpuHealth = {sampleValid: false, sustainedHigh: false, highForSeconds: 0, thresholdPercent: 80, requiredSeconds: 180};
             this.disk = new CurTotal(0, 0);
             this.loads = [0, 0, 0];
             this.mem = new CurTotal(0, 0);
@@ -376,6 +374,7 @@
                 resetDay: 1,
                 periodStart: null,
                 nextReset: null,
+                today: '',
                 daily: [],
                 averageDaily: 0,
                 projectedPeriodEnd: 0,
@@ -393,6 +392,7 @@
                 return;
             }
             this.cpu = new CurTotal(data.cpu, 100);
+            if (data.cpuHealth && typeof data.cpuHealth === 'object') this.cpuHealth = Object.assign(this.cpuHealth, data.cpuHealth);
             this.disk = new CurTotal(data.disk.current, data.disk.total);
             this.loads = data.loads.map(load => toFixed(load, 2));
             this.mem = new CurTotal(data.mem.current, data.mem.total);
@@ -438,6 +438,180 @@
         },
     };
 
+    Vue.component('runtime-trend', {
+        delimiters: ['[[', ']]'],
+        template: `<div class="runtime-trend-shell">
+            <button type="button" class="runtime-trend-summary" :class="[summaryState, {'is-expanded': expanded}]"
+                    @click="toggleExpanded" :aria-expanded="expanded.toString()" aria-controls="runtime-trend-details">
+                <span class="runtime-trend-summary-icon" aria-hidden="true"><a-icon type="line-chart"></a-icon></span>
+                <span class="runtime-trend-summary-copy">
+                    <small>运行趋势</small>
+                    <strong>[[ summaryTitle ]]</strong>
+                </span>
+                <svg v-if="rows.length" class="runtime-trend-mini-chart" viewBox="0 0 320 56" preserveAspectRatio="none" aria-hidden="true">
+                    <rect v-for="bar in summaryBars" :key="bar.index" :x="bar.x" :y="bar.y" :width="bar.width" :height="bar.height" rx="1.5"
+                          class="runtime-trend-mini-bar" :class="'is-' + bar.state"></rect>
+                </svg>
+                <span class="runtime-trend-summary-action">[[ expanded ? '收起' : '展开' ]] <a-icon :type="expanded ? 'up' : 'down'"></a-icon></span>
+            </button>
+
+            <transition name="runtime-trend-expand">
+            <div v-if="expanded" id="runtime-trend-details" class="runtime-trend-details">
+                <div class="runtime-trend-analytics-head">
+                    <div class="runtime-trend-analytics-title">
+                        <small>[[ activeTitle ]] · 近 2 周</small>
+                        <div class="runtime-trend-primary-value">[[ activePrimary ]]</div>
+                        <span>[[ activeCaption ]]</span>
+                    </div>
+                    <a-radio-group v-model="tab" class="runtime-trend-tabs" button-style="solid" size="small">
+                        <a-radio-button value="resource">资源</a-radio-button>
+                        <a-radio-button value="network">网络</a-radio-button>
+                        <a-radio-button value="xray">Xray</a-radio-button>
+                    </a-radio-group>
+                </div>
+                <a-alert v-if="error" type="warning" message="运行趋势暂不可用" show-icon></a-alert>
+                <a-empty v-else-if="!rows.length" description="正在积累运行数据"></a-empty>
+                <template v-else>
+                    <section class="runtime-trend-analytics-chart" @mouseleave="selected=null">
+                        <div v-if="tab !== 'xray'" class="runtime-trend-legend" aria-label="图表图例">
+                            <span v-for="metric in metrics" :key="metric.key">
+                                <i :style="{background:metric.color}"></i>
+                                [[ metric.label ]] <strong>[[ metricSummary(metric) ]]</strong>
+                            </span>
+                        </div>
+                        <div v-else class="runtime-trend-legend runtime-trend-xray-legend" aria-label="图表图例">
+                            <span class="normal"><i></i>运行正常</span>
+                            <span class="error"><i></i>发现异常</span>
+                            <span class="gap"><i></i>无数据</span>
+                        </div>
+                        <div class="runtime-trend-plot">
+                            <svg v-if="tab !== 'xray'" viewBox="0 0 1000 170" preserveAspectRatio="none" role="img"
+                                 :aria-label="activeTitle + '近 2 周趋势'" class="runtime-trend-chart">
+                                <defs>
+                                    <linearGradient v-for="metric in metrics" :key="metric.key" :id="'runtime-gradient-' + metric.key" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" :stop-color="metric.color" stop-opacity=".24"></stop>
+                                        <stop offset="100%" :stop-color="metric.color" stop-opacity=".02"></stop>
+                                    </linearGradient>
+                                </defs>
+                                <path v-for="grid in chartGrid" :key="grid" :d="'M0 ' + grid + ' H1000'" class="runtime-trend-chart-grid"></path>
+                                <g v-for="metric in metrics" :key="metric.key">
+                                    <path v-for="(segment,index) in chartSegments" :key="metric.key + '-area-' + index"
+                                          :d="area(segment,metric)" :fill="'url(#runtime-gradient-' + metric.key + ')'" class="runtime-trend-chart-area"></path>
+                                    <path v-for="(segment,index) in chartSegments" :key="metric.key + '-line-' + index"
+                                          :d="line(segment,metric)" :stroke="metric.color" class="runtime-trend-chart-line"></path>
+                                </g>
+                                <g v-if="selected">
+                                    <line :x1="x(selected.time)" :x2="x(selected.time)" y1="16" y2="150" class="runtime-trend-chart-guide"></line>
+                                    <circle v-for="metric in metrics" :key="'selected-' + metric.key"
+                                            :cx="x(selected.time)" :cy="y(selected[metric.key],metric)" r="4" :stroke="metric.color" class="runtime-trend-chart-point"></circle>
+                                </g>
+                                <rect v-for="row in displayRows" :key="row.time" :x="Math.max(0,x(row.time)-4)" y="10" width="8" height="148"
+                                      class="runtime-trend-chart-hit" @mouseenter="selected=row" @click="selected=row">
+                                    <title>[[ rowSummary(row) ]]</title>
+                                </rect>
+                            </svg>
+                            <svg v-else viewBox="0 0 1000 170" preserveAspectRatio="none" role="img" aria-label="Xray 近 2 周运行状态" class="runtime-trend-chart runtime-trend-xray-strip">
+                                <path v-for="grid in chartGrid" :key="grid" :d="'M0 ' + grid + ' H1000'" class="runtime-trend-chart-grid"></path>
+                                <rect width="1000" height="34" y="68" rx="8" class="runtime-trend-xray-empty"></rect>
+                                <rect v-for="row in runningDisplayRows" :key="'running-' + row.time" :x="Math.max(0,x(row.time)-1.5)" width="3" height="34" y="68"
+                                      class="is-running" @mouseenter="selected=row" @click="selected=row">
+                                    <title>[[ rowSummary(row) ]]</title>
+                                </rect>
+                                <rect v-for="row in errorDisplayRows" :key="'error-' + row.time" :x="Math.max(0,x(row.time)-2.5)" width="5" height="34" y="68"
+                                      class="is-error" @mouseenter="selected=row" @click="selected=row">
+                                    <title>[[ rowSummary(row) ]]</title>
+                                </rect>
+                                <line v-if="selected" :x1="x(selected.time)" :x2="x(selected.time)" y1="38" y2="132" class="runtime-trend-chart-guide"></line>
+                            </svg>
+                            <div v-if="selected" class="runtime-trend-tooltip" :style="tooltipStyle" aria-live="polite">
+                                [[ rowSummary(selected) ]]
+                            </div>
+                        </div>
+                        <div class="runtime-trend-time-axis"><span>[[ stamp(now-windowSeconds) ]]</span><span>[[ stamp(now) ]]</span></div>
+                    </section>
+                </template>
+            </div>
+            </transition>
+        </div>`,
+        data() { return {rows:[], tab:'resource', selected:null, error:false, expanded:false, now:Date.now()/1000, windowSeconds:14*24*60*60, timer:null}; },
+        computed: {
+            metrics() { return this.tab==='resource' ? [{key:'cpu',label:'CPU',color:'#3268d6',percent:true},{key:'memory',label:'运行内存',color:'#58a6ff',percent:true}] : [{key:'upload',label:'实时流量',color:'#3268d6'},{key:'connections',label:'网络连接',color:'#a37ee8'}]; },
+            abnormalRows() { return this.rows.filter(row => row.state !== 'running'); },
+            chartSegments() {
+                const segments=[];
+                for(const row of this.rows){
+                    const last=segments.length?segments[segments.length-1]:null;
+                    if(!last||row.time-last[last.length-1].time>330)segments.push([row]); else last.push(row);
+                }
+                const step=Math.max(1,Math.ceil(this.rows.length/168));
+                return segments.map(segment=>segment.filter((row,index)=>index%step===0||row.state!=='running'||index===segment.length-1));
+            },
+            displayRows() { return this.chartSegments.reduce((all,segment)=>all.concat(segment),[]); },
+            runningDisplayRows() { return this.displayRows.filter(row=>row.state==='running'); },
+            errorDisplayRows() { return this.displayRows.filter(row=>row.state!=='running'); },
+            summaryBars() {
+                const count=56, width=320/count, start=this.now-this.windowSeconds, interval=this.windowSeconds/count;
+                return Array.from({length:count},(_,index)=>{
+                    const from=start+index*interval, to=from+interval;
+                    const samples=this.rows.filter(row=>row.time>=from&&row.time<to);
+                    const state=!samples.length?'gap':(samples.some(row=>row.state!=='running')?'error':'running');
+                    const peak=samples.length?Math.max(...samples.map(row=>Number(row.cpuPeak)||Number(row.cpu)||0)):0;
+                    const height=state==='gap'?8:Math.max(12,Math.min(46,12+peak*.34));
+                    return {index,state,x:index*width+.8,width:Math.max(2,width-1.6),height,y:52-height};
+                });
+            },
+            summaryTitle() {
+                if (this.error) return '运行趋势暂不可用';
+                if (!this.rows.length) return '正在积累运行数据';
+                return this.abnormalRows.length ? `近 2 周发现 ${this.abnormalRows.length} 次异常` : '近 2 周运行稳定';
+            },
+            summaryState() { return this.error ? 'is-error' : (this.abnormalRows.length ? 'has-issue' : 'is-stable'); },
+            activeTitle() { return this.tab==='resource'?'资源使用':(this.tab==='network'?'网络状态':'Xray 可用性'); },
+            latest() { return this.rows.length?this.rows[this.rows.length-1]:{}; },
+            activePrimary() {
+                if (!this.rows.length) return '—';
+                if (this.tab==='resource') return `CPU ${Number(this.latest.cpu).toFixed(1)}%`;
+                if (this.tab==='network') return this.format(this.latest.upload,{key:'upload'});
+                return this.abnormalRows.length?`${this.availability}% 可用`:'持续正常';
+            },
+            activeCaption() {
+                if (!this.rows.length) return '等待数据';
+                if (this.tab==='resource') return `运行内存 ${Number(this.latest.memory).toFixed(1)}%`;
+                if (this.tab==='network') return `${Number(this.latest.connections)||0} 个连接`;
+                return this.abnormalRows.length?`发现 ${this.abnormalRows.length} 次异常`:'未发现运行异常';
+            },
+            availability() { return this.rows.length?Number((this.rows.filter(row=>row.state==='running').length/this.rows.length*100).toFixed(2)):0; },
+            chartGrid() { return [28,88,150]; },
+            tooltipStyle() {
+                if (!this.selected) return {};
+                return {left:`${Math.max(13,Math.min(87,this.x(this.selected.time)/10))}%`};
+            }
+        },
+        methods: {
+            async load() { try { const msg=await HttpUtil.post('/server/runtimeTrend'); if(!msg.success) throw new Error(); this.rows=msg.obj||[]; this.now=Date.now()/1000; this.error=false; } catch(e) { this.error=true; } },
+            toggleExpanded() { this.expanded=!this.expanded; this.selected=null; },
+            stamp(t) { return moment(t*1000).format('MM-DD HH:mm'); },
+            x(t) { return Math.max(0,Math.min(1000,(t-(this.now-this.windowSeconds))/this.windowSeconds*1000)); },
+            metricMax(m) { return m.percent?100:Math.max(1,...this.rows.map(r=>Number(r[m.key])||0)); },
+            y(v,m) { return 150-Math.max(0,Number(v)||0)/this.metricMax(m)*122; },
+            line(segment,m) { return segment.map((row,index)=>(index?'L':'M')+this.x(row.time)+','+this.y(row[m.key],m)).join(' '); },
+            area(segment,m) {
+                if(!segment.length)return '';
+                const first=this.x(segment[0].time), last=this.x(segment[segment.length-1].time);
+                return `M${first},150 `+segment.map(row=>`L${this.x(row.time)},${this.y(row[m.key],m)}`).join(' ')+` L${last},150 Z`;
+            },
+            metricSummary(metric) { return this.format(this.latest[metric.key],metric); },
+            rowSummary(row) {
+                const time=this.stamp(row.time);
+                if(this.tab==='resource')return `${time} · CPU ${Number(row.cpu).toFixed(1)}% · 内存 ${Number(row.memory).toFixed(1)}%`;
+                if(this.tab==='network')return `${time} · 流量 ${this.format(row.upload,{key:'upload'})} · ${Number(row.connections)||0} 个连接`;
+                return `${time} · ${row.state==='running'?'Xray 运行正常':'Xray 发现异常'}`;
+            },
+            format(v,m) { return m.key==='upload'?sizeFormat(v)+'/s':Number(v||0).toFixed(m.percent?1:0)+(m.percent?'%':''); }
+        },
+        mounted() { this.load(); this.timer=setInterval(()=>this.load(),60000); },
+        beforeDestroy() { clearInterval(this.timer); }
+    });
     const app = new Vue({
         delimiters: ['[[', ']]'],
         el: '#app',
@@ -574,15 +748,14 @@
                 if (value >= 1024) return `${toFixed(value / 1024, 1)}K`;
                 return `${value}B`;
             },
-            trafficBarHeight(used) {
+            isTodayTrafficDay(day) {
+                const today = this.status.monthlyTraffic.today;
+                return typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today) && !!day && day.date === today;
+            },
+            trafficBarHeight(upload) {
                 const max = this.trafficHistoryMax;
                 if (max <= 0) return '4px';
-                return `${Math.max(6, Number(used || 0) / max * 100)}%`;
-            },
-            trafficPartHeight(part, used) {
-                const total = Number(used || 0);
-                if (total <= 0) return '0%';
-                return `${Math.max(0, Math.min(100, Number(part || 0) / total * 100))}%`;
+                return `${Math.max(6, Number(upload || 0) / max * 100)}%`;
             },
             async pollStatus() {
                 if (document.hidden) {
@@ -661,10 +834,11 @@
                     {key: 'mem', label: '运行内存占用', value: this.status.mem.percent},
                     {key: 'disk', label: '磁盘空间', value: this.status.disk.percent},
                 ] : []) {
+                    if (metric.key === 'cpu' && !(this.status.cpuHealth.sampleValid === true && this.status.cpuHealth.sustainedHigh === true)) continue;
                     const isDisk = metric.key === 'disk';
                     const description = isDisk
                         ? `当前仅剩 ${Math.max(0, 100 - Number(metric.value || 0))}% 可用空间`
-                        : `当前使用率 ${metric.value}%`;
+                        : `当前使用率 ${metric.value}%${metric.key === 'cpu' ? ' · 已持续至少 3 分钟' : ''}`;
                     if (metric.value >= 90) {
                         issues.push({
                             key: metric.key,
@@ -744,7 +918,7 @@
                 return '#4f7cff';
             },
             trafficHistoryMax() {
-                return Math.max(0, ...this.status.monthlyTraffic.daily.map(day => Number(day.used || 0)));
+                return Math.max(0, ...this.status.monthlyTraffic.daily.map(day => Number(day.up || 0)));
             },
             trafficHistoryRange() {
                 const daily = this.status.monthlyTraffic.daily;
@@ -754,14 +928,14 @@
             },
             trafficTrendAriaLabel() {
                 return this.status.monthlyTraffic.daily
-                    .map(day => `${moment(day.date).format('MM 月 DD 日')} 上传 ${sizeFormat(day.up)}，下载 ${sizeFormat(day.down)}，合计 ${sizeFormat(day.used)}`)
+                    .map(day => `${moment(day.date).format('MM 月 DD 日')} ${day.estimated ? '约 ' : ''}${sizeFormat(day.up)}`)
                     .join('，');
             },
             totalConnections() {
                 return Number(this.status.tcpCount || 0) + Number(this.status.udpCount || 0);
             },
             trafficTwoWeekTotal() {
-                return this.status.monthlyTraffic.daily.reduce((sum, day) => sum + Number(day.used || 0), 0);
+                return this.status.monthlyTraffic.daily.reduce((sum, day) => sum + Number(day.up || 0), 0);
             },
             trafficTwoWeekAverage() {
                 const daily = this.status.monthlyTraffic.daily;

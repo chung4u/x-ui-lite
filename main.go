@@ -4,9 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"github.com/op/go-logging"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	_ "unsafe"
 	"x-ui/config"
@@ -50,15 +52,37 @@ func runWebServer() {
 	}
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGKILL)
+	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGUSR1)
+	prepared := false
 	for {
 		sig := <-sigCh
 
 		switch sig {
+		case syscall.SIGUSR1:
+			path, receiptErr := maintenanceReceiptPath()
+			if receiptErr != nil {
+				logger.Warning("maintenance preparation refused:", receiptErr)
+				continue
+			}
+			if err := server.Stop(); err != nil {
+				logger.Warning("maintenance preparation failed; process retained:", err)
+				continue
+			}
+			prepared = true
+			if err := writeMaintenanceReceipt(path); err != nil {
+				logger.Warning("maintenance receipt failed:", err)
+				continue
+			}
+			logger.Info("maintenance prepared; traffic persisted and core stopped")
 		case syscall.SIGHUP:
+			if prepared {
+				logger.Warning("reload refused while maintenance is prepared")
+				continue
+			}
 			err := server.Stop()
 			if err != nil {
 				logger.Warning("stop server err:", err)
+				continue
 			}
 			server = web.NewServer()
 			global.SetWebServer(server)
@@ -68,7 +92,12 @@ func runWebServer() {
 				return
 			}
 		default:
-			server.Stop()
+			if !prepared {
+				if err := server.Stop(); err != nil {
+					logger.Warning("stop failed; process retained for traffic recovery:", err)
+					continue
+				}
+			}
 			return
 		}
 	}
@@ -90,11 +119,10 @@ func resetSetting() {
 	}
 }
 
-func updateSetting(port int, username string, password string, basePath string) {
+func updateSetting(port int, username string, password string, basePath string) error {
 	err := database.InitDB(config.GetDBPath())
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	settingService := service.SettingService{}
@@ -102,7 +130,7 @@ func updateSetting(port int, username string, password string, basePath string) 
 	if port > 0 {
 		err := settingService.SetPort(port)
 		if err != nil {
-			fmt.Println("set port failed:", err)
+			return fmt.Errorf("set port failed: %w", err)
 		} else {
 			fmt.Printf("set port %v success", port)
 		}
@@ -111,7 +139,7 @@ func updateSetting(port int, username string, password string, basePath string) 
 		userService := service.UserService{}
 		err := userService.UpdateFirstUser(username, password)
 		if err != nil {
-			fmt.Println("set username and password failed:", err)
+			return fmt.Errorf("set username and password failed: %w", err)
 		} else {
 			fmt.Println("set username and password success")
 		}
@@ -119,11 +147,12 @@ func updateSetting(port int, username string, password string, basePath string) 
 	if basePath != "" {
 		err := settingService.SetBasePath(basePath)
 		if err != nil {
-			fmt.Println("set base path failed:", err)
+			return fmt.Errorf("set base path failed: %w", err)
 		} else {
 			fmt.Printf("set base path %v success", basePath)
 		}
 	}
+	return nil
 }
 
 func printPanelAccess() {
@@ -173,6 +202,7 @@ func main() {
 	var port int
 	var username string
 	var password string
+	var passwordStdin bool
 	var basePath string
 	var reset bool
 	var showPanelAccess bool
@@ -180,6 +210,7 @@ func main() {
 	settingCmd.IntVar(&port, "port", 0, "set panel port")
 	settingCmd.StringVar(&username, "username", "", "set login username")
 	settingCmd.StringVar(&password, "password", "", "set login password")
+	settingCmd.BoolVar(&passwordStdin, "password-stdin", false, "read login password from stdin instead of process arguments")
 	settingCmd.StringVar(&basePath, "base-path", "", "set panel base path")
 	settingCmd.BoolVar(&showPanelAccess, "show-panel-access", false, "show panel access settings")
 
@@ -191,6 +222,7 @@ func main() {
 		fmt.Println("    run            run web panel")
 		fmt.Println("    v2-ui          migrate form v2-ui")
 		fmt.Println("    setting        set settings")
+		fmt.Println("    check          validate effective Xray configuration without starting it")
 	}
 
 	flag.Parse()
@@ -200,6 +232,17 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "check":
+		if err := database.InitDB(config.GetDBPath()); err != nil {
+			fmt.Println("Database check failed")
+			os.Exit(1)
+		}
+		xrayService := service.XrayService{}
+		if err := xrayService.CheckConfiguration(); err != nil {
+			fmt.Println("Xray configuration validation failed")
+			os.Exit(1)
+		}
+		fmt.Println("Xray configuration validation passed")
 	case "run":
 		err := runCmd.Parse(os.Args[2:])
 		if err != nil {
@@ -223,12 +266,31 @@ func main() {
 			fmt.Println(err)
 			return
 		}
+		if passwordStdin {
+			if password != "" {
+				fmt.Println("cannot combine -password and -password-stdin")
+				os.Exit(1)
+			}
+			data, err := io.ReadAll(io.LimitReader(os.Stdin, 1027))
+			if err != nil {
+				fmt.Println("cannot read password from stdin")
+				os.Exit(1)
+			}
+			password = strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
+			if len(password) > 1024 {
+				fmt.Println("password is too long")
+				os.Exit(1)
+			}
+		}
 		if reset {
 			resetSetting()
 		} else if showPanelAccess {
 			printPanelAccess()
 		} else {
-			updateSetting(port, username, password, basePath)
+			if err := updateSetting(port, username, password, basePath); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
 		}
 	default:
 		fmt.Println("except 'run' or 'v2-ui' or 'setting' subcommands")

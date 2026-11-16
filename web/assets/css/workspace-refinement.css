@@ -1,0 +1,87 @@
+/* Keep the same filters available at every screen size without changing the toolbar height. */
+.managed-workspace .mw-entry-main { max-width:100%; }
+.managed-workspace .mw-entry-heading .ant-select { width:440px; min-width:0; max-width:100%; }
+.managed-workspace .mw-filter-select { display:none; }
+.managed-workspace .mw-cycle-note { margin:0 0 8px; color:#718098; font-size:12px; line-height:1.6; }
+.managed-workspace .mw-runtime-alert { margin-bottom:16px; border-radius:12px; }
+.managed-workspace .mw-runtime-alert .ant-btn { margin-top:2px; }
+
+@media(min-width:768px) and (max-width:1279px) {
+    .managed-workspace .mw-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; }
+    .managed-workspace .mw-toolbar > .ant-input-affix-wrapper { grid-column:1; grid-row:1; max-width:none; min-width:0; }
+    .managed-workspace .mw-toolbar > .ant-btn-primary { grid-column:2; grid-row:1; }
+    .managed-workspace .mw-toolbar > .mw-filter-tabs { grid-column:1; grid-row:2; justify-self:start; }
+    .managed-workspace .mw-toolbar > .mw-sort-select { grid-column:2; grid-row:2; justify-self:end; }
+}
+
+@media(max-width:767px) {
+    .managed-workspace .mw-entry-main { width:100%; }
+    .managed-workspace .mw-entry-heading { display:grid; grid-template-columns:29px minmax(0,1fr); }
+    .managed-workspace .mw-entry-heading .ant-select { width:100%; }
+    .managed-workspace .mw-entry-heading .ant-tag { grid-column:2; justify-self:start; }
+    .managed-workspace .mw-toolbar { display:grid; grid-template-columns:minmax(0,1fr) 112px; gap:9px 8px; }
+    .managed-workspace .mw-toolbar > .mw-filter-tabs { display:none; }
+    .managed-workspace .mw-toolbar.mw-stable-toolbar > .ant-select.mw-filter-select { display:block; grid-column:1; grid-row:2; width:100%; min-width:0; }
+    .managed-workspace .mw-toolbar.mw-stable-toolbar > .ant-select.mw-sort-select { grid-column:2; grid-row:2; width:112px; }
+    .managed-workspace .mw-cycle-note { font-size:12px; }
+    .managed-workspace .mw-runtime-alert .ant-btn { min-height:44px; }
+}
+
+/* Operation hierarchy: stable copy feedback, quiet secondary actions, aligned header. */
+.managed-workspace .mw-users-table th.mw-actions-heading { text-align:left; }
+.managed-workspace .mw-compact-actions { justify-content:flex-start; gap:6px 12px; }
+.managed-workspace .mw-compact-actions .ant-btn {
+    min-height:36px; height:36px; padding:0 8px; gap:4px; font-size:13px;
+}
+.managed-workspace .mw-compact-actions .ant-btn > .anticon { font-size:14px; }
+.managed-workspace .mw-copy-split { border-color:#e3ebfa; background:#f3f6ff; }
+.managed-workspace .mw-copy-split .ant-btn { min-height:34px; height:34px; }
+.managed-workspace .mw-copy-split .ant-btn.mw-copy-primary {
+    flex:0 0 100px; width:100px; min-width:100px; padding:0 8px; color:#4167c2;
+}
+.managed-workspace .mw-copy-split .ant-btn.mw-copy-trigger {
+    flex:0 0 28px; width:28px; min-width:28px; padding:0; border-left-color:#e1e8f5;
+}
+.managed-workspace .mw-copy-split .ant-btn.mw-copy-trigger .anticon { font-size:10px; }
+.managed-workspace .mw-copy-split .ant-btn:hover:not(:disabled),
+.managed-workspace .mw-copy-split .ant-btn:active:not(:disabled),
+.managed-workspace .mw-copy-split .ant-btn.mw-copy-trigger[aria-expanded="true"] { background:#e9efff; color:#3159b4; }
+.managed-workspace .mw-compact-actions .ant-btn.mw-edit { color:#62718a; }
+.managed-workspace .mw-compact-actions .ant-btn.mw-edit:hover:not(:disabled) { background:#f1f4f8; color:#36517d; }
+.managed-workspace .mw-compact-actions .ant-btn.mw-danger {
+    margin-left:0; padding:0 8px; border-radius:8px; color:#b55b64;
+}
+.managed-workspace .mw-compact-actions .ant-btn.mw-danger::before { display:none; content:none; }
+.managed-workspace .mw-compact-actions .ant-btn.mw-danger:hover:not(:disabled) { background:#fff3f3; color:#9f3542; }
+.managed-workspace .mw-compact-actions .ant-btn:disabled { color:#a3adbd; }
+.managed-workspace .mw-copy-split .ant-btn.mw-copy-primary:disabled,
+.managed-workspace .mw-copy-split .ant-btn.mw-copy-trigger:disabled { color:#99a6bd; }
+
+@media(min-width:1101px) and (max-width:1359px) {
+    .managed-workspace .mw-compact-actions { gap:5px 6px; }
+    .managed-workspace .mw-compact-actions .ant-btn { padding:0 4px; font-size:12px; }
+    .managed-workspace .mw-copy-split .ant-btn.mw-copy-primary { flex-basis:88px; width:88px; min-width:88px; }
+    .managed-workspace .mw-compact-actions .ant-btn.mw-danger { padding:0 4px; }
+}
+@media(max-width:1100px) {
+    .managed-workspace .mw-compact-actions { gap:6px 8px; }
+    .managed-workspace .mw-compact-actions .ant-btn { min-height:46px; height:46px; font-size:12px; }
+    .managed-workspace .mw-copy-split .ant-btn { min-height:44px; height:44px; }
+    .managed-workspace .mw-copy-split .ant-btn.mw-copy-primary { flex-basis:92px; width:92px; min-width:92px; }
+    .managed-workspace .mw-copy-split .ant-btn.mw-copy-trigger { flex-basis:44px; width:44px; min-width:44px; }
+}
+@media(max-width:359px) {
+    .managed-workspace .mw-compact-actions { gap:5px 6px; }
+    .managed-workspace .mw-compact-actions .ant-btn { padding:0 4px; }
+    .managed-workspace .mw-compact-actions .ant-btn > .anticon { font-size:12px; }
+    .managed-workspace .mw-copy-split .ant-btn.mw-copy-primary { flex-basis:88px; width:88px; min-width:88px; }
+    .managed-workspace .mw-copy-split .ant-btn.mw-copy-trigger { padding:0; }
+    .managed-workspace .mw-compact-actions .ant-btn.mw-danger { padding:0 4px; }
+}
+.managed-workspace .mw-delivery-actions .ant-btn.mw-delivery-copy { min-width:112px; width:112px; }
+.mw-editor-change-state { margin-right:auto; align-self:center; color:#596980; }
+.managed-workspace .mw-filter-context strong { color:#405779; font-variant-numeric:tabular-nums; }
+.managed-workspace .mw-search-key { display:none; }
+@media (hover:hover) and (pointer:fine) {
+    .managed-workspace .mw-search-key { display:inline-block; padding:0 5px; border:1px solid #d8dfeb; border-radius:4px; color:#68778e; font:12px/18px monospace; pointer-events:none; }
+}

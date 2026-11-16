@@ -1,0 +1,18 @@
+/* Only the server-dated current column receives emphasis. */
+.daily-traffic-chart .daily-traffic-column.is-today {
+    border-radius: 5px;
+    background: #f3f6ff;
+}
+
+.daily-traffic-chart .daily-traffic-column.is-today .daily-traffic-value,
+.daily-traffic-chart .daily-traffic-column.is-today .daily-traffic-date {
+    color: #4263cc;
+}
+
+.daily-traffic-chart .daily-traffic-column.is-today .daily-traffic-bar-track {
+    background: #edf2ff;
+}
+
+.daily-traffic-chart .daily-traffic-column.is-today .daily-traffic-bar .upload {
+    background: linear-gradient(180deg, #6787e8, #466bd5);
+}

@@ -1,0 +1,39 @@
+/* Only user management and settings adopt the refined visual hierarchy. */
+body.ux-refined-page {
+    --xui-muted: #69778e;
+    --xui-shadow: 0 3px 14px rgba(25, 39, 70, .045);
+}
+.ux-refined-page .page-title { font-size: 28px; }
+.ux-refined-page .sider-brand .brand-mark,
+.ux-refined-page .ant-btn-primary { box-shadow: none; }
+.ux-refined-page #sider .ant-menu-item-selected { background: #4263cc; box-shadow: none; }
+.ux-refined-page .settings-summary-item,
+.ux-refined-page .mw-content { box-shadow: var(--xui-shadow); }
+.ux-refined-page .page-shell .page-eyebrow { display: none; }
+.ux-refined-page .page-header { align-items: center; }
+.ux-refined-page .page-loading-placeholder {
+    min-height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 32px;
+    border: 1px solid var(--xui-line);
+    border-radius: 16px;
+    background: #fff;
+    color: var(--xui-text);
+    font-size: 14px;
+}
+.ux-refined-page .mw-summary-label,
+.ux-refined-page .mw-state-line,
+.ux-refined-page .mw-usage-meta,
+.ux-refined-page .mw-user-expiry small,
+.ux-refined-page .mw-usage-percent,
+.ux-refined-page .settings-summary-item span { color: var(--xui-muted); font-size: 12px; }
+.ux-refined-page .mw-user-traffic strong { font-variant-numeric: tabular-nums; }
+.ux-refined-page .brand-mark { background: #5472de; }
+@media (max-width: 767px) {
+    .ux-refined-page .page-title { font-size: 24px; }
+    .ux-refined-page .page-loading-placeholder { min-height: 220px; padding: 24px 16px; }
+}

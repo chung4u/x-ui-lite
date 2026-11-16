@@ -1,23 +1,32 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 {{template "head" .}}
-<body>
+<body class="ux-refined-page">
 <a-layout id="app" v-cloak>
     {{ template "commonSider" . }}
     <a-layout id="content-layout">
         <a-layout-content id="main-content" tabindex="-1">
             <a-spin :spinning="spinning" :delay="500" tip="正在加载入站配置">
-                <div class="page-shell">
+                <div class="page-shell inbound-workspace-page">
                     <transition name="list" appear>
                         <header class="page-header">
                             <div>
-                                <div class="page-eyebrow">Inbound management</div>
-                                <h1 class="page-title">入站列表</h1>
+
+                                <h1 class="page-title">[[ !hasLoaded || (hasUserEntries && !showLegacyList) ? '用户管理' : '连接入口' ]]</h1>
+                                <a-tooltip v-if="hasUserEntries && showLegacyList" :title="runtimeState && runtimeState.error ? runtimeState.error : '配置保存后会短暂重载，状态以实际运行配置为准'">
+                                    <a-tag :color="runtimeColor" class="managed-runtime-tag">[[ runtimeLabel ]]</a-tag>
+                                </a-tooltip>
                             </div>
                             <div class="page-actions">
-                                <a-button class="icon-button" icon="reload" :loading="refreshing"
-                                          aria-label="刷新入站配置" @click="getDBInbounds"></a-button>
-                                <a-button type="primary" icon="plus" @click="openAddInbound">添加入站</a-button>
+                                <a-button v-if="hasUserEntries && showLegacyList" @click="showLegacyList=false">返回用户管理</a-button>
+                                <a-tooltip :title="refreshHint"><a-button class="icon-button" icon="reload" :loading="refreshing" aria-label="刷新用户与入口" @click="getDBInbounds"></a-button></a-tooltip>
+                                <a-dropdown :trigger="['click']">
+                                    <a-button>更多 <a-icon type="down"></a-icon></a-button>
+                                    <a-menu slot="overlay">
+                                        <a-menu-item @click="openAddInbound">添加入口</a-menu-item>
+                                        <a-menu-item v-if="hasUserEntries" @click="showLegacyList=true">全部入口列表</a-menu-item>
+                                    </a-menu>
+                                </a-dropdown>
                             </div>
                         </header>
                     </transition>
@@ -28,8 +37,16 @@
                                  description="暂时无法获取入站配置，请检查连接后重试。"></a-alert>
                     </transition>
 
+                    <div v-if="!hasLoaded" class="page-loading-placeholder" role="status"><a-icon type="loading"></a-icon><span>[[ loadError ? '暂时无法读取用户与入口' : '正在读取用户与入口' ]]</span><a-button v-if="loadError" @click="getDBInbounds">重试</a-button></div>
+
+                    <a-alert v-if="runtimeLoadError && hasLoaded" type="warning" show-icon class="data-stale-alert" message="运行状态暂未获取"><a-button slot="description" size="small" @click="getRuntime">重新检查</a-button></a-alert>
+
+                    <managed-workspace v-if="hasUserEntries && !showLegacyList" ref="workspace"
+                        :entries="userEntries" :runtime-state="runtimeState"
+                        :refresh="getDBInbounds" :list-error="loadError" @settings="openEditInbound" @details="showInfo" @updated="workspaceUpdated" @refresh-runtime="getRuntime" @runtime-details="showRuntimeIssue"></managed-workspace>
+
                     <transition name="list" appear>
-                        <section class="inbound-summary-grid" aria-label="流量概览">
+                        <section v-if="hasLoaded && (!hasUserEntries || showLegacyList)" class="inbound-summary-grid" aria-label="流量概览">
                             <a-row :gutter="16" type="flex">
                                 <a-col :xs="12" :sm="12" :lg="6" style="margin-bottom: 16px">
                                     <a-card class="overview-card" hoverable>
@@ -76,7 +93,7 @@
                     </transition>
 
                     <transition name="list" appear>
-                        <a-card class="table-card" hoverable>
+                        <a-card v-if="hasLoaded && (!hasUserEntries || showLegacyList)" class="table-card" hoverable>
                             <div class="table-toolbar">
                                 <div>
                                     <h2 class="section-title"><a-icon type="unordered-list"></a-icon>配置明细</h2>
@@ -110,7 +127,7 @@
                                 </a-radio-group>
                             </div>
                             <div class="inbound-filter-bar" aria-label="入站筛选条件">
-                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、端口或 ID"
+                                <a-input v-model.trim="filters.query" allow-clear placeholder="搜索备注、域名、端口或 ID"
                                          aria-label="搜索入站配置" ref="filterSearch">
                                     <a-icon slot="prefix" type="search"></a-icon>
                                 </a-input>
@@ -143,7 +160,7 @@
                                     <template slot="inbound" slot-scope="text, dbInbound">
                                         <div class="inbound-name-cell">
                                             <strong>[[ dbInbound.remark || '未命名入站' ]]</strong>
-                                            <span>端口 [[ dbInbound.port ]] · # [[ dbInbound.id ]]</span>
+                                            <span>[[ dbInbound.connectionLabel ]] · [[ dbInbound.transportLabel ]]</span>
                                         </div>
                                     </template>
                                     <template slot="users" slot-scope="text, dbInbound">
@@ -203,7 +220,8 @@
                                         </div>
                                     </template>
                                     <template slot="expiryTime" slot-scope="text, dbInbound">
-                                        <template v-if="dbInbound.expiryTime > 0">
+                                        <a-tag v-if="dbInbound.isManagedExternal" color="blue">按用户设置</a-tag>
+                                        <template v-else-if="dbInbound.expiryTime > 0">
                                             <a-tag v-if="dbInbound.isExpiry" color="red">[[ formatExpiryDate(dbInbound.expiryTime) ]]</a-tag>
                                             <a-tag v-else color="blue">[[ formatExpiryDate(dbInbound.expiryTime) ]]</a-tag>
                                         </template>
@@ -231,7 +249,8 @@
                                                   @change="checked => switchEnable(dbInbound, checked)"></a-switch>
                                     </div>
                                     <div class="inbound-mobile-tags">
-                                        <a-tag color="cyan">端口 [[ dbInbound.port ]]</a-tag>
+                                        <a-tag color="cyan">[[ dbInbound.transportLabel ]]</a-tag>
+                                        <span class="mobile-entry-endpoint">[[ dbInbound.connectionLabel ]]</span>
                                         <a-tag v-for="tag in conditionTags(dbInbound)" :key="tag.key" :color="tag.color">
                                             [[ tag.label ]]
                                         </a-tag>
@@ -273,6 +292,8 @@
     </a-layout>
 </a-layout>
 {{template "js" .}}
+{{template "managedWorkspaceTemplate"}}
+<script src="{{ .base_path }}assets/js/managed-workspace.js?profile-names-v1-20261105"></script>
 <script>
 
     const columns = [{
@@ -317,9 +338,13 @@
         el: '#app',
         data: {
             siderDrawer,
+            sizeFormat,
+            moment,
             spinning: false,
             refreshing: false,
             hasLoaded: false,
+            workspaceCheckedAt: null,
+            workspaceFailed: false,
             dbInbounds: [],
             inboundById: {},
             filters: {
@@ -334,8 +359,39 @@
             filtersInitialized: false,
             selectedInboundIds: [],
             batchPending: false,
+            showLegacyList: false,
+            runtimeState: null,
+            runtimeRequest: 0,
+            runtimeLoadError: false,
+            runtimeTimer: null,
         },
         methods: {
+            workspaceUpdated(state) { this.workspaceCheckedAt=state.checkedAt;this.workspaceFailed=!!state.failed; },
+            showRuntimeIssue() {
+                const state=this.runtimeState;
+                this.$warning({title: '连接入口运行状态', content: state && state.error ? state.error : state && state.running === false ? '核心当前未运行，请在系统状态查看核心错误。' : '运行配置仍待确认，请重新检查。', okText: '重新检查', onOk: () => this.getRuntime()});
+            },
+            async getRuntime() {
+                const request=++this.runtimeRequest;
+                try {
+                    const msg = await HttpUtil.post('/xui/inbound/runtime');
+                    if (request !== this.runtimeRequest) return;
+                    this.runtimeLoadError = !(msg.success && msg.obj);
+                    if (!this.runtimeLoadError) this.runtimeState = msg.obj;
+                } catch (_) { if (request === this.runtimeRequest) this.runtimeLoadError = true; }
+            },
+            async refreshRuntimeAfterSave() {
+                if (this.runtimeTimer) window.clearTimeout(this.runtimeTimer);
+                let remaining = 6;
+                const poll = async () => {
+                    await this.getRuntime();
+                    remaining--;
+                    if (remaining > 0 && (!this.runtimeState || (!this.runtimeState.applied && !this.runtimeState.error))) {
+                        this.runtimeTimer = window.setTimeout(poll, 4000);
+                    }
+                };
+                await poll();
+            },
             loading(spinning=true) {
                 this.spinning = spinning;
             },
@@ -355,6 +411,10 @@
                     this.setInbounds(msg.obj);
                     this.hasLoaded = true;
                     this.loadError = false;
+                    await this.getRuntime();
+                    if (this.$refs && this.$refs.workspace) await this.$refs.workspace.load();
+                } catch (_) {
+                    this.loadError = true;
                 } finally {
                     this.loading(false);
                     this.refreshing = false;
@@ -410,7 +470,15 @@
             },
             syncFiltersToUrl() {
                 if (!this.filtersInitialized) return;
+                if (this.hasUserEntries && !this.showLegacyList) {
+                    const entry = new URLSearchParams(location.search).get('entry');
+                    history.replaceState(null, '', `${location.pathname}${entry ? `?entry=${encodeURIComponent(entry)}` : ''}${location.hash || ''}`);
+                    return;
+                }
                 const params = new URLSearchParams();
+                const entry = new URLSearchParams(location.search).get('entry');
+                if (entry) params.set('entry', entry);
+                if (this.showLegacyList) params.set('view', 'entries');
                 if (this.filters.query) params.set('q', this.filters.query);
                 if (this.filters.status !== 'all') params.set('status', this.filters.status);
                 if (this.filters.sort !== 'id-asc') params.set('sort', this.filters.sort);
@@ -419,12 +487,19 @@
                 history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}`);
             },
             handleKeyboardShortcut(event) {
+                if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey) return;
+                if (!['/', 'r', 'R', 'Escape'].includes(event.key)) return;
+                const workspace = this.$refs.workspace;
+                if (workspace && (workspace.drawerVisible || workspace.distributionOpenId)) return;
+                const overlays = document.querySelectorAll('.ant-modal-wrap, .ant-drawer-open, .ant-dropdown, .ant-select-dropdown, .ant-calendar-picker-container');
+                if (Array.from(overlays).some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')) return;
                 const target = event.target;
-                const editing = target && (target.matches('input, textarea, select') || target.isContentEditable);
+                const editing = target && (target.isContentEditable || (target.closest && target.closest('input, textarea, select, [role="combobox"]')));
                 if (event.key === '/' && !editing) {
                     event.preventDefault();
-                    if (this.$refs.filterSearch && this.$refs.filterSearch.focus) this.$refs.filterSearch.focus();
-                } else if (event.key.toLowerCase() === 'r' && !editing && !event.metaKey && !event.ctrlKey) {
+                    if (workspace) workspace.focusUsers();
+                    else if (this.$refs.filterSearch && this.$refs.filterSearch.focus) this.$refs.filterSearch.focus();
+                } else if (event.key.toLowerCase() === 'r' && !editing && !event.repeat && !this.refreshing && !this.spinning) {
                     event.preventDefault();
                     this.getDBInbounds();
                 } else if (event.key === 'Escape' && editing && target.blur) {
@@ -448,6 +523,7 @@
                 return '#4f7cff';
             },
             trafficLimitLabel(dbInbound) {
+                if (dbInbound.isManagedExternal) return '额度与到期时间在用户管理中设置';
                 if (dbInbound.total <= 0) {
                     return '月度不限额';
                 }
@@ -458,6 +534,7 @@
                 return `已用 ${this.trafficPercent(dbInbound)}% · 月度限额 ${sizeFormat(dbInbound.total)}`;
             },
             expiryLabel(dbInbound) {
+                if (dbInbound.isManagedExternal) return '按用户设置';
                 if (dbInbound.expiryTime <= 0) {
                     return '无限期';
                 }
@@ -493,7 +570,8 @@
                 if (condition.exhausted) tags.push({key: 'exhausted', label: '流量耗尽', color: 'red'});
                 else if (condition.highUsage) tags.push({key: 'high-usage', label: '流量超过 90%', color: 'orange'});
                 if (condition.disabled) tags.push({key: 'disabled', label: '已停用', color: 'blue'});
-                if (tags.length === 0) tags.push({key: 'normal', label: '正常', color: 'green'});
+                if (dbInbound.isManagedExternal && this.runtimeState && this.runtimeState.error) tags.push({key: 'apply-failed', label: '配置未应用', color: 'red'});
+                if (tags.length === 0) tags.push({key: 'normal', label: dbInbound.isManagedExternal ? '统一入口' : '正常', color: dbInbound.isManagedExternal ? 'blue' : 'green'});
                 return tags;
             },
             matchesQuickFilter(dbInbound) {
@@ -570,6 +648,7 @@
                                 if (action.key === 'resetTraffic') {
                                     next.up = 0;
                                     next.down = 0;
+                                    next.resetTraffic = true;
                                 }
                                 const msg = await HttpUtil.post(`/xui/inbound/update/${next.id}`, this.inboundPayload(dbInbound.toInbound(), next));
                                 if (msg.success) successCount++;
@@ -585,8 +664,8 @@
             },
             openAddInbound() {
                 inModal.show({
-                    title: '添加入站',
-                    okText: '添加',
+                    title: '添加入口',
+                    okText: '创建入口',
                     usedPorts: this.dbInbounds.map(inbound => inbound.port),
                     confirm: async (inbound, dbInbound) => {
                         await this.addInbound(inbound, dbInbound);
@@ -608,6 +687,11 @@
                 });
             },
             openUsers(dbInbound) {
+                if (dbInbound.isUserManageable) {
+                    this.showLegacyList=false;
+                    this.$nextTick(() => { if(this.$refs.workspace) { this.$refs.workspace.switchEntry(dbInbound.id);this.$refs.workspace.focusUsers(); } });
+                    return;
+                }
                 userModal.show({
                     dbInbound,
                     inbound: dbInbound.toInbound(),
@@ -624,19 +708,35 @@
                     remark: dbInbound.remark,
                     enable: dbInbound.enable,
                     expiryTime: dbInbound.expiryTime,
+                    externalHost: dbInbound.externalHost,
+                    externalPort: dbInbound.externalPort,
+                    externalTls: dbInbound.externalTls,
+                    resetTraffic: !!dbInbound.resetTraffic,
 
                     listen: inbound.listen,
                     port: inbound.port,
                     protocol: inbound.protocol,
                     settings: inbound.settings.toString(),
-                    streamSettings: inbound.stream.toString(),
+                    streamSettings: dbInbound.isManagedExternal ? dbInbound.streamSettings : inbound.stream.toString(),
                     sniffing: inbound.canSniffing() ? inbound.sniffing.toString() : '{}',
                 };
             },
             async addInbound(inbound, dbInbound) {
                 const canAdd = await this.ensureFirewallAccess(inbound.port);
                 if (!canAdd) return null;
-                return await this.submit('/xui/inbound/add', this.inboundPayload(inbound, dbInbound), inModal);
+                const msg = await this.submit('/xui/inbound/add', this.inboundPayload(inbound, dbInbound), inModal);
+                if (msg && msg.success) {
+                    this.resetFilters();
+                    const created = this.dbInbounds.find(item => msg.obj && item.id === msg.obj.id)
+                        || this.dbInbounds.find(item => Number(item.port) === Number(inbound.port));
+                    if (created) {
+                        this.openUsers(created);
+                        this.$message.success('入口已创建，已切换到新入口。');
+                    } else {
+                        this.$message.warning('入口已创建，列表读取尚未完成，请刷新查看。');
+                    }
+                }
+                return msg;
             },
             async ensureFirewallAccess(port) {
                 const msg = await HttpUtil.post(`/xui/inbound/firewall/${port}/status`);
@@ -694,6 +794,7 @@
                             const resetInbound = new DBInbound(dbInbound);
                             resetInbound.up = 0;
                             resetInbound.down = 0;
+                            resetInbound.resetTraffic = true;
                             await this.updateInbound(inbound, resetInbound, null);
                         } finally {
                             this.setPending(dbInbound.id, false);
@@ -741,11 +842,15 @@
                 const msg = await HttpUtil.postWithModal(url, data, modal);
                 if (msg.success) {
                     await this.getDBInbounds();
+                    this.refreshRuntimeAfterSave();
                 }
                 return msg;
             },
         },
         watch: {
+            showLegacyList() {
+                this.syncFiltersToUrl();
+            },
             filters: {
                 deep: true,
                 handler() {
@@ -755,6 +860,7 @@
         },
         mounted() {
             const params = new URLSearchParams(location.search);
+            this.showLegacyList = params.get('view') === 'entries';
             const quick = params.get('quick');
             const allowedQuickFilters = ['all', 'attention', 'expired', 'expiring', 'high-usage', 'exhausted', 'disabled'];
             if (allowedQuickFilters.includes(quick)) {
@@ -772,9 +878,35 @@
             this.getTrafficSetting();
         },
         beforeDestroy() {
+            this.runtimeRequest++;
             document.removeEventListener('keydown', this.handleKeyboardShortcut);
+            if (this.runtimeTimer) window.clearTimeout(this.runtimeTimer);
         },
         computed: {
+            refreshHint() {
+                const time=this.workspaceCheckedAt ? moment(this.workspaceCheckedAt).format('HH:mm:ss') : '尚未读取';
+                return this.workspaceFailed ? `刷新失败 · 上次成功 ${time}` : `刷新用户与入口 · 上次成功 ${time}`;
+            },
+            userEntries() {
+                return this.dbInbounds.filter(inbound => inbound.isUserManageable).sort((a, b) => a.id - b.id);
+            },
+            hasUserEntries() {
+                return this.userEntries.length > 0;
+            },
+            runtimeLabel() {
+                const state = this.runtimeState;
+                if (!state) return '运行状态待获取';
+                if (state.error) return state.running ? '应用失败 · 旧配置仍运行' : '应用失败 · 核心未运行';
+                if (!state.running) return '核心未运行';
+                if (state.applied) return '运行中 · 已应用';
+                return '已保存 · 等待应用';
+            },
+            runtimeColor() {
+                const state = this.runtimeState;
+                if (!state) return undefined;
+                if (state.error || !state.running) return 'red';
+                return state.applied ? 'green' : 'orange';
+            },
             enabledCount() {
                 return this.dbInbounds.filter(inbound => inbound.enable).length;
             },
@@ -836,7 +968,7 @@
                         return false;
                     }
                     if (query !== '') {
-                        const searchable = [inbound.id, inbound.remark, inbound.port, inbound.listen, inbound.tag]
+                        const searchable = [inbound.id, inbound.remark, inbound.publicPort, inbound.externalHost, inbound.port, inbound.listen, inbound.tag]
                             .join(' ').toLowerCase();
                         if (!searchable.includes(query)) {
                             return false;
@@ -849,9 +981,9 @@
                         case 'traffic-desc':
                             return (b.up + b.down) - (a.up + a.down);
                         case 'port-asc':
-                            return a.port - b.port;
+                            return a.publicPort - b.publicPort;
                         case 'port-desc':
-                            return b.port - a.port;
+                            return b.publicPort - a.publicPort;
                         case 'remark-asc':
                             return (a.remark || '').localeCompare(b.remark || '', 'zh-CN');
                         default:

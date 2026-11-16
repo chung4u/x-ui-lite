@@ -1,28 +1,32 @@
 {{define "form/realitySettings"}}
-<a-alert class="reality-settings-notice" type="info" show-icon
-         message="REALITY 会模拟与目标站点的 TLS 握手"
-         description="伪装站点、SNI 和握手目标应对应同一个可正常访问的 TLS 服务。私钥只用于服务端，客户端将使用自动推导的公钥。"></a-alert>
-
-<div class="reality-settings-layout">
+<div class="reality-settings-layout entry-reality-target">
     <section class="reality-settings-group">
-        <div class="reality-settings-group-head">
-            <strong>伪装配置</strong>
-            <span>从预设的知名站点中选择，自动匹配 SNI 与握手目标</span>
-        </div>
         <a-form class="reality-settings-grid" layout="vertical">
-            <a-form-item label="伪装站点 / Server Name" required>
-                <a-select v-model="selectedRealitySite" aria-label="选择 REALITY 伪装站点">
+            <a-form-item label="伪装站点" required>
+                <a-select v-model="selectedRealitySite" placeholder="请选择候选站点" aria-label="选择 REALITY 伪装站点">
+                    <a-select-option v-if="selectedRealitySite === '__existing__'" value="__existing__">
+                        保留当前配置 · [[ (realitySettings.serverNames || []).join(', ') ]]
+                    </a-select-option>
                     <a-select-option v-for="site in realitySiteOptions" :key="site.value" :value="site.value">
                         [[ site.label ]] · [[ site.serverName ]]
                     </a-select-option>
                 </a-select>
             </a-form-item>
-            <a-form-item label="握手目标（自动配置）" required>
-                <a-input :value="realitySettings.dest" disabled aria-label="REALITY 握手目标"></a-input>
-            </a-form-item>
         </a-form>
+        <div v-if="realitySettings.dest" class="entry-reality-destination">握手目标：[[ realitySettings.dest ]]</div>
+        <a-alert :type="inModal.realityTargetState === 'valid' ? 'success' : inModal.realityTargetState === 'unavailable' ? 'warning' : 'info'" show-icon
+                 :message="inModal.realityTargetMessage || '候选站点需从服务器检测，现有配置将保持不变。'"></a-alert>
+        <a-button size="small" :loading="inModal.realityTargetState === 'checking'" :disabled="!inModal.selectedRealityCandidate()" @click="checkRealityTarget" style="margin-top: 10px">从服务器检测站点</a-button>
     </section>
 
+</div>
+{{end}}
+
+{{define "form/realityAdvancedSettings"}}
+<a-alert class="reality-settings-notice" type="info" show-icon
+         message="伪装站点、SNI 和握手目标须对应同一个 TLS 服务"
+         description="私钥仅用于服务端；客户端配置自动使用公钥。"></a-alert>
+<div class="reality-settings-layout">
     <section class="reality-settings-group">
         <div class="reality-settings-group-head">
             <strong>客户端特征</strong>
@@ -51,22 +55,24 @@
     <section class="reality-settings-group">
         <div class="reality-settings-group-head">
             <strong>REALITY 握手配置</strong>
-            <span>密钥只保存在当前入站配置中</span>
+            <span>密钥只保存在当前入口配置中</span>
         </div>
         <a-form class="reality-settings-grid" layout="vertical">
             <a-form-item class="reality-settings-key-field" label="私钥" required>
-                <a-input v-model.trim="realitySettings.privateKey" type="password" autocomplete="new-password" placeholder="使用生成按钮或粘贴 X25519 私钥"></a-input>
+                <a-input v-model.trim="realitySettings.privateKey" aria-label="REALITY 私钥" :disabled="inModal.realityKeyLoading" type="password" autocomplete="new-password" placeholder="使用生成按钮或粘贴 X25519 私钥"></a-input>
                 <div class="reality-key-actions">
                     <a-button size="small" icon="key" :loading="inModal.realityKeyLoading" @click="generateRealityKey">生成密钥</a-button>
                     <a-button size="small" :loading="inModal.realityKeyLoading" :disabled="!realitySettings.privateKey" @click="deriveRealityPublicKey">查看公钥</a-button>
                 </div>
+                <small v-if="inModal.realityPreset && inModal.realityKeyLoading">正在为此入口生成独立密钥…</small>
+                <a-alert v-if="inModal.realityKeyError" type="error" show-icon :message="inModal.realityKeyError"></a-alert>
                 <div v-if="inModal.realityPublicKey" class="reality-public-key">
                     <span>客户端公钥</span>
                     <code>[[ inModal.realityPublicKey ]]</code>
                 </div>
             </a-form-item>
             <a-form-item label="Short ID（可选）">
-                <a-input v-model.trim="realitySettings.shortIds[0]" placeholder="可留空；填写时为 1–16 位十六进制，例如：a1b2c3d4"></a-input>
+                <a-input v-model.trim="realitySettings.shortIds[0]" aria-label="REALITY Short ID" :disabled="inModal.realityShortIDLoading" placeholder="可留空；填写时为 2–16 位偶数长度十六进制，例如：a1b2c3d4"></a-input>
                 <div class="reality-key-actions">
                     <a-button size="small" icon="reload" :loading="inModal.realityShortIDLoading" @click="generateRealityShortID">随机生成</a-button>
                 </div>

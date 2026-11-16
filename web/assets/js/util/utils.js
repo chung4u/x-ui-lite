@@ -34,7 +34,8 @@ class HttpUtil {
             const resp = await axios.get(url, data, options);
             msg = this._respToMsg(resp);
         } catch (e) {
-            msg = new Msg(false, e.toString());
+            msg = e.response && e.response.data && typeof e.response.data.success === 'boolean'
+                ? this._respToMsg(e.response) : new Msg(false, e.toString());
         }
         this._handleMsg(msg);
         return msg;
@@ -46,7 +47,8 @@ class HttpUtil {
             const resp = await axios.post(url, data, options);
             msg = this._respToMsg(resp);
         } catch (e) {
-            msg = new Msg(false, e.toString());
+            msg = e.response && e.response.data && typeof e.response.data.success === 'boolean'
+                ? this._respToMsg(e.response) : new Msg(false, e.toString());
         }
         this._handleMsg(msg);
         return msg;

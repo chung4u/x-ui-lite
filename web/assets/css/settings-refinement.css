@@ -1,0 +1,127 @@
+.settings-page-shell .settings-save-state.neutral {
+    border-color: #e1e7ef;
+    background: #f5f7fb;
+    color: var(--xui-muted, #6c7890);
+}
+
+.settings-apply-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 18px;
+    padding: 16px 18px;
+    border: 1px solid #dce4f2;
+    border-radius: 14px;
+    background: #f6f8fc;
+}
+
+.settings-apply-panel.pending {
+    border-color: #ecdfc1;
+    background: #fffaf0;
+}
+
+.settings-apply-panel strong {
+    color: var(--xui-ink, #25324b);
+    font-size: 14px;
+}
+
+.settings-apply-panel p {
+    margin: 5px 0 0;
+    color: var(--xui-muted, #6c7890);
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.settings-apply-panel .ant-btn {
+    flex-shrink: 0;
+}
+
+.settings-retry-copy {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.settings-reconnect-alert {
+    margin-bottom: 18px;
+}
+
+.settings-reconnect-alert p {
+    margin-bottom: 8px;
+}
+
+.settings-page-shell .settings-tab-note {
+    margin: 2px 0 14px;
+    color: var(--xui-muted, #6c7890);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.account-submit-state {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #f4f7fc;
+    color: var(--xui-muted, #6c7890);
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.account-submit-state .anticon {
+    margin-top: 4px;
+}
+
+.account-submit-state.pending {
+    background: #fff9ed;
+    color: #946a20;
+}
+
+.panel-address-preview {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.panel-address-preview a {
+    overflow-wrap: anywhere;
+}
+
+.panel-address-preview small {
+    color: var(--xui-muted, #6c7890);
+    font-size: 12px;
+}
+
+.settings-page-shell .settings-summary-item span,
+.settings-page-shell .certificate-panel-head small {
+    font-size: 12px;
+}
+
+@media (max-width: 767px) {
+    .settings-apply-panel {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .settings-apply-panel .ant-btn {
+        min-height: 44px;
+    }
+
+    .settings-page-shell .page-actions {
+        flex-wrap: wrap;
+    }
+
+    .settings-page-shell .settings-pending-copy span {
+        white-space: normal;
+    }
+}

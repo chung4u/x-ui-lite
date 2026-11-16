@@ -43,7 +43,7 @@ func decideInboundTrafficPeriod(savedPeriod string, savedResetDay int, currentPe
 func (s *InboundService) GetInbounds(userId int) ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("user_id = ?", userId).Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("user_id = ? AND archived_at = 0", userId).Find(&inbounds).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
@@ -53,11 +53,17 @@ func (s *InboundService) GetInbounds(userId int) ([]*model.Inbound, error) {
 func (s *InboundService) GetAllInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("archived_at = 0").Find(&inbounds).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
 	return inbounds, nil
+}
+
+func (s *InboundService) GetArchivedInbounds(userID int) ([]*model.Inbound, error) {
+	inbounds := []*model.Inbound{}
+	err := database.GetDB().Where("user_id = ? AND archived_at <> 0", userID).Order("id").Find(&inbounds).Error
+	return inbounds, err
 }
 
 func (s *InboundService) checkPortExist(port int, ignoreId int) (bool, error) {
@@ -75,6 +81,12 @@ func (s *InboundService) checkPortExist(port int, ignoreId int) (bool, error) {
 }
 
 func (s *InboundService) AddInbound(inbound *model.Inbound) error {
+	if err := validateInboundXHTTP(inbound); err != nil {
+		return err
+	}
+	if err := validateInboundReality(inbound); err != nil {
+		return err
+	}
 	if err := validateInboundFlow(inbound); err != nil {
 		return err
 	}
@@ -86,11 +98,22 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) error {
 		return common.NewError("端口已存在:", inbound.Port)
 	}
 	db := database.GetDB()
-	return db.Save(inbound).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(inbound).Error; err != nil {
+			return err
+		}
+		return syncInboundUserPolicies(tx, inbound)
+	})
 }
 
 func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 	for _, inbound := range inbounds {
+		if err := validateInboundXHTTP(inbound); err != nil {
+			return err
+		}
+		if err := validateInboundReality(inbound); err != nil {
+			return err
+		}
 		if err := validateInboundFlow(inbound); err != nil {
 			return err
 		}
@@ -108,7 +131,7 @@ func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 	var err error
 	defer func() {
 		if err == nil {
-			tx.Commit()
+			err = tx.Commit().Error
 		} else {
 			tx.Rollback()
 		}
@@ -119,18 +142,37 @@ func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 		if err != nil {
 			return err
 		}
+		if err = syncInboundUserPolicies(tx, inbound); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func (s *InboundService) DelInbound(id int) error {
+	inbound, err := s.GetInbound(id)
+	if err != nil {
+		return err
+	}
+	if inbound.ArchivedAt != 0 {
+		return fmt.Errorf("归档记录保留用于历史和回退，不可删除")
+	}
+	if inbound.ExternalHost != "" {
+		return fmt.Errorf("托管入口请使用停用功能，删除须通过部署流程处理")
+	}
 	db := database.GetDB()
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("inbound_id = ?", id).Delete(&model.InboundUserTraffic{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("inbound_id = ?", id).Delete(&model.InboundSubscription{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("inbound_id = ?", id).Delete(&model.InboundUserPolicy{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("inbound_id = ?", id).Delete(&model.InboundQuotaGroup{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(model.Inbound{}, id).Error
@@ -154,6 +196,12 @@ func (s *InboundService) GetInboundUserTraffic(inboundID int) ([]*model.InboundU
 }
 
 func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
+	if err := validateInboundXHTTP(inbound); err != nil {
+		return err
+	}
+	if err := validateInboundReality(inbound); err != nil {
+		return err
+	}
 	if err := validateInboundFlow(inbound); err != nil {
 		return err
 	}
@@ -164,38 +212,49 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
 	if exist {
 		return common.NewError("端口已存在:", inbound.Port)
 	}
-
-	oldInbound, err := s.GetInbound(inbound.Id)
+	old, err := s.GetInbound(inbound.Id)
 	if err != nil {
 		return err
 	}
-	oldTraffic := oldInbound.Up + oldInbound.Down
-	manualTrafficReset := inbound.Up+inbound.Down < oldTraffic
-	oldInbound.Up = inbound.Up
-	oldInbound.Down = inbound.Down
-	oldInbound.Total = inbound.Total
-	oldInbound.Remark = inbound.Remark
-	if manualTrafficReset || inbound.Enable != oldInbound.Enable {
-		oldInbound.TrafficExhausted = false
+	if old.ArchivedAt != 0 {
+		return fmt.Errorf("归档入口不可修改")
 	}
-	oldInbound.Enable = inbound.Enable
-	oldInbound.ExpiryTime = inbound.ExpiryTime
-	oldInbound.Listen = inbound.Listen
-	oldInbound.Port = inbound.Port
-	oldInbound.Protocol = inbound.Protocol
-	oldInbound.Settings = inbound.Settings
-	oldInbound.StreamSettings = inbound.StreamSettings
-	oldInbound.Sniffing = inbound.Sniffing
-	oldInbound.Tag = fmt.Sprintf("inbound-%v", inbound.Port)
-
-	db := database.GetDB()
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(oldInbound).Error; err != nil {
+	if err = validateManagedEndpointChange(old, inbound); err != nil {
+		return err
+	}
+	// Explicit fields avoid overwriting concurrent traffic samples with a stale form.
+	updates := map[string]interface{}{
+		"total": inbound.Total, "remark": inbound.Remark, "enable": inbound.Enable, "expiry_time": inbound.ExpiryTime,
+		"listen": inbound.Listen, "port": inbound.Port, "protocol": inbound.Protocol, "settings": inbound.Settings,
+		"stream_settings": inbound.StreamSettings, "sniffing": inbound.Sniffing,
+		"external_host": inbound.ExternalHost, "external_port": inbound.ExternalPort, "external_tls": inbound.ExternalTLS,
+	}
+	if old.Tag == "" {
+		updates["tag"] = fmt.Sprintf("inbound-%v", inbound.Port)
+	}
+	if inbound.Enable != old.Enable {
+		updates["traffic_exhausted"] = false
+	}
+	if inbound.ResetTraffic {
+		updates["up"] = 0
+		updates["down"] = 0
+		updates["traffic_exhausted"] = false
+	}
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Inbound{}).Where("id = ? AND archived_at = 0", inbound.Id).Updates(updates).Error; err != nil {
 			return err
 		}
-		if manualTrafficReset {
-			return tx.Model(&model.InboundUserTraffic{}).Where("inbound_id = ?", oldInbound.Id).
-				Updates(map[string]interface{}{"up": 0, "down": 0}).Error
+		if err := syncInboundUserPolicies(tx, inbound); err != nil {
+			return err
+		}
+		if inbound.ResetTraffic {
+			if err := tx.Model(&model.InboundUserTraffic{}).Where("inbound_id = ?", inbound.Id).Updates(map[string]interface{}{"up": 0, "down": 0}).Error; err != nil {
+				return err
+			}
+			legacyMembership := tx.Model(&model.InboundUserPolicy{}).Select("group_id").Where("inbound_id = ? AND quota_initialized = ?", inbound.Id, false)
+			if err := tx.Model(&model.InboundQuotaGroup{}).Where("inbound_id = ? AND id IN (?)", inbound.Id, legacyMembership).Updates(map[string]interface{}{"up": 0, "down": 0, "exhausted": false}).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -229,12 +288,16 @@ func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {
 		if err != nil {
 			tx.Rollback()
 		} else {
-			tx.Commit()
+			err = tx.Commit().Error
 		}
 	}()
-	for _, traffic := range traffics {
+	return persistTraffic(tx, traffics)
+}
+
+func persistTraffic(tx *gorm.DB, traffics []*xray.Traffic) (err error) {
+ for _, traffic := range traffics {
 		if traffic.IsInbound {
-			err = tx.Model(&model.Inbound{}).Where("tag = ?", traffic.Tag).
+			err = tx.Model(&model.Inbound{}).Where("tag = ? AND archived_at = 0", traffic.Tag).
 				UpdateColumn("up", gorm.Expr("up + ?", traffic.Up)).
 				UpdateColumn("down", gorm.Expr("down + ?", traffic.Down)).
 				Error
@@ -244,7 +307,7 @@ func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {
 		}
 		if traffic.IsUser && traffic.UserTag != "" && traffic.ClientID != "" && (traffic.Up != 0 || traffic.Down != 0) {
 			var inbound model.Inbound
-			err = tx.Where("tag = ?", traffic.UserTag).First(&inbound).Error
+			err = tx.Where("tag = ? AND archived_at = 0", traffic.UserTag).First(&inbound).Error
 			if err != nil {
 				if err == gorm.ErrRecordNotFound {
 					err = nil
@@ -252,20 +315,44 @@ func (s *InboundService) AddTraffic(traffics []*xray.Traffic) (err error) {
 				}
 				return
 			}
+			now := time.Now()
+			date := now.In(time.FixedZone("Asia/Shanghai", 8*60*60)).Format("2006-01-02")
 			err = tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "inbound_id"}, {Name: "client_id"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{
-					"up":   gorm.Expr("up + ?", traffic.Up),
-					"down": gorm.Expr("down + ?", traffic.Down),
+					"last_active_at":   now.UnixMilli(),
+					"daily_date":       date,
+					"daily_up":         gorm.Expr("CASE WHEN daily_date = ? THEN daily_up ELSE 0 END + ?", date, traffic.Up),
+					"daily_down":       gorm.Expr("CASE WHEN daily_date = ? THEN daily_down ELSE 0 END + ?", date, traffic.Down),
+					"daily_started_at": gorm.Expr("CASE WHEN daily_started_at > 0 THEN daily_started_at ELSE ? END", now.UnixMilli()),
+					"up":               gorm.Expr("up + ?", traffic.Up),
+					"down":             gorm.Expr("down + ?", traffic.Down),
 				}),
 			}).Create(&model.InboundUserTraffic{
-				InboundId: inbound.Id,
-				ClientId:  traffic.ClientID,
-				Up:        traffic.Up,
-				Down:      traffic.Down,
+				InboundId:    inbound.Id,
+				ClientId:     traffic.ClientID,
+				LastActiveAt: now.UnixMilli(),
+				DailyDate:    date, DailyUp: traffic.Up, DailyDown: traffic.Down, DailyStartedAt: now.UnixMilli(),
+				Up:   traffic.Up,
+				Down: traffic.Down,
 			}).Error
 			if err != nil {
 				return
+			}
+			var policy model.InboundUserPolicy
+			policyErr := tx.Where("inbound_id = ? AND client_id = ?", inbound.Id, traffic.ClientID).First(&policy).Error
+			if policyErr != nil && policyErr != gorm.ErrRecordNotFound {
+				err = policyErr
+				return
+			}
+			if policyErr == nil && !policy.QuotaInitialized && policy.GroupId != 0 {
+				err = tx.Model(&model.InboundQuotaGroup{}).Where("id = ? AND inbound_id = ?", policy.GroupId, inbound.Id).Updates(map[string]interface{}{
+					"up": gorm.Expr("up + ?", traffic.Up), "down": gorm.Expr("down + ?", traffic.Down),
+					"exhausted": gorm.Expr("CASE WHEN total > 0 AND up + down + ? + ? >= total THEN 1 ELSE 0 END", traffic.Up, traffic.Down),
+				}).Error
+				if err != nil {
+					return
+				}
 			}
 		}
 	}
@@ -292,7 +379,7 @@ func (s *InboundService) SyncMonthlyTrafficPeriod(now time.Time) (needsXrayResta
 
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	if err = db.Model(model.Inbound{}).Find(&inbounds).Error; err != nil && err != gorm.ErrRecordNotFound {
+	if err = db.Model(model.Inbound{}).Where("archived_at = 0").Find(&inbounds).Error; err != nil && err != gorm.ErrRecordNotFound {
 		return false, err
 	}
 	if len(inbounds) == 0 {
@@ -312,6 +399,11 @@ func (s *InboundService) SyncMonthlyTrafficPeriod(now time.Time) (needsXrayResta
 	}()
 
 	for _, inbound := range inbounds {
+		groupChanged, groupErr := syncQuotaGroupPeriods(tx, inbound.Id, period, allSetting.TrafficResetDay)
+		if groupErr != nil {
+			return needsXrayRestart, groupErr
+		}
+		needsXrayRestart = needsXrayRestart || groupChanged
 		action := decideInboundTrafficPeriod(
 			inbound.TrafficResetPeriod,
 			inbound.TrafficResetDay,
@@ -347,6 +439,15 @@ func (s *InboundService) SyncMonthlyTrafficPeriod(now time.Time) (needsXrayResta
 			if err = tx.Model(&model.InboundUserTraffic{}).Where("inbound_id = ?", inbound.Id).Updates(userUpdates).Error; err != nil {
 				return needsXrayRestart, err
 			}
+			// A quota-exhausted account is omitted from the running core while
+			// the parent inbound can remain enabled. Request the same immediate
+			// configuration refresh as a shared-quota cycle reset; policy flags
+			// themselves remain unchanged, preserving manual disable and expiry.
+			var individualQuotas int64
+			if err = tx.Model(&model.InboundUserPolicy{}).Where("inbound_id = ? AND quota_initialized = ? AND total > 0", inbound.Id, true).Count(&individualQuotas).Error; err != nil {
+				return needsXrayRestart, err
+			}
+			needsXrayRestart = needsXrayRestart || individualQuotas > 0
 		}
 	}
 	return needsXrayRestart, nil
@@ -356,13 +457,13 @@ func (s *InboundService) DisableInvalidInbounds() (int64, error) {
 	db := database.GetDB()
 	now := time.Now().Unix() * 1000
 	trafficResult := db.Model(model.Inbound{}).
-		Where("total > 0 and up + down >= total and enable = ?", true).
+		Where("archived_at = 0 AND total > 0 and up + down >= total and enable = ?", true).
 		Updates(map[string]interface{}{"enable": false, "traffic_exhausted": true})
 	if trafficResult.Error != nil {
 		return trafficResult.RowsAffected, trafficResult.Error
 	}
 	expiryResult := db.Model(model.Inbound{}).
-		Where("expiry_time > 0 and expiry_time <= ? and enable = ?", now, true).
+		Where("archived_at = 0 AND expiry_time > 0 and expiry_time <= ? and enable = ?", now, true).
 		Update("enable", false)
 	return trafficResult.RowsAffected + expiryResult.RowsAffected, expiryResult.Error
 }

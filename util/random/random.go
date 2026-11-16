@@ -1,8 +1,8 @@
 package random
 
 import (
-	"math/rand"
-	"time"
+	"crypto/rand"
+	"math/big"
 )
 
 var numSeq [10]rune
@@ -13,8 +13,6 @@ var numUpperSeq [36]rune
 var allSeq [62]rune
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
-
 	for i := 0; i < 10; i++ {
 		numSeq[i] = rune('0' + i)
 	}
@@ -37,7 +35,11 @@ func init() {
 func Seq(n int) string {
 	runes := make([]rune, n)
 	for i := 0; i < n; i++ {
-		runes[i] = allSeq[rand.Intn(len(allSeq))]
+		index, err := rand.Int(rand.Reader, big.NewInt(int64(len(allSeq))))
+		if err != nil {
+			panic("secure randomness unavailable")
+		}
+		runes[i] = allSeq[index.Int64()]
 	}
 	return string(runes)
 }

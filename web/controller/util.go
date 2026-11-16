@@ -2,12 +2,11 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
-	"net"
 	"net/http"
-	"strings"
 	"x-ui/config"
 	"x-ui/logger"
 	"x-ui/web/entity"
+	"x-ui/web/session"
 )
 
 func getUriId(c *gin.Context) int64 {
@@ -20,15 +19,7 @@ func getUriId(c *gin.Context) int64 {
 }
 
 func getRemoteIp(c *gin.Context) string {
-	value := c.GetHeader("X-Forwarded-For")
-	if value != "" {
-		ips := strings.Split(value, ",")
-		return ips[0]
-	} else {
-		addr := c.Request.RemoteAddr
-		ip, _, _ := net.SplitHostPort(addr)
-		return ip
-	}
+	return session.ClientIP(c)
 }
 
 func jsonMsg(c *gin.Context, msg string, err error) {
@@ -71,12 +62,17 @@ func pureJsonMsg(c *gin.Context, success bool, msg string) {
 }
 
 func html(c *gin.Context, name string, title string, data gin.H) {
+	if err := session.EnsureCSRF(c); err != nil {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"success": false, "msg": "暂时无法建立安全会话，请稍后重试"})
+		return
+	}
 	if data == nil {
 		data = gin.H{}
 	}
 	data["title"] = title
 	data["request_uri"] = c.Request.RequestURI
 	data["base_path"] = c.GetString("base_path")
+	data["csrf_token"] = session.CSRFToken(c)
 	c.HTML(http.StatusOK, name, getContext(data))
 }
 

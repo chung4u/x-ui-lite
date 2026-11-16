@@ -40,7 +40,7 @@
                         </a-form-item>
                         <a-form-item :validate-status="fieldErrors.password ? 'error' : ''"
                                      :help="fieldErrors.password">
-                            <a-input :type="passwordVisible ? 'text' : 'password'" v-model.trim="user.password" name="password"
+                            <a-input :type="passwordVisible ? 'text' : 'password'" v-model="user.password" name="password"
                                      autocomplete="current-password" placeholder="密码"
                                      aria-label="密码" :aria-invalid="fieldErrors.password ? 'true' : 'false'"
                                      :disabled="loading" @input="clearFieldError('password')"
@@ -62,7 +62,7 @@
                     </a-form>
                     <div class="login-security">
                         <a-icon type="safety-certificate"></a-icon>
-                        连接已加密，请妥善保管管理凭据
+                        请使用可信的 HTTPS 入口，并妥善保管管理凭据
                     </div>
                 </div>
             </section>

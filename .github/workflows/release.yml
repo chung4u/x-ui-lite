@@ -21,10 +21,13 @@ jobs:
       - name: Build package
         env:
           TARGET_ARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           docker run --rm \
             -e TARGET_ARCH \
+            -e RELEASE_TAG \
+            -e GOTOOLCHAIN=go1.27.3 \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             golang:1.22-bullseye \
@@ -34,27 +37,41 @@ jobs:
               if [[ "$TARGET_ARCH" == "arm64" ]]; then
                 apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
                 export CC=aarch64-linux-gnu-gcc
+              else
+                go test -mod=readonly ./...
               fi
               mkdir -p package/bin
-              CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -buildvcs=false -trimpath -o package/x-ui .
+              CGO_ENABLED=1 GOOS=linux GOARCH="$TARGET_ARCH" go build -mod=readonly -buildvcs=false -trimpath -o package/x-ui .
               case "$TARGET_ARCH" in
                 amd64)
                   XRAY_ASSET="Xray-linux-64.zip"
-                  XRAY_SHA256="b3e5902d06d6282fe53cfa2fc426058b9aeaa429b2c812e20887cd47f26d08bf"
+                  XRAY_SHA256="b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82"
                   ;;
                 arm64)
                   XRAY_ASSET="Xray-linux-arm64-v8a.zip"
-                  XRAY_SHA256="13a251379bea366c2cf10363ad71e75734193d401f26f518bf0c25e5c8f8c931"
+                  XRAY_SHA256="64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be"
                   ;;
               esac
               curl --fail --silent --show-error --location --retry 3 \
-                "https://github.com/XTLS/Xray-core/releases/download/v26.6.27/${XRAY_ASSET}" \
+                "https://github.com/XTLS/Xray-core/releases/download/v26.11.9/${XRAY_ASSET}" \
                 -o "/tmp/${XRAY_ASSET}"
               echo "${XRAY_SHA256}  /tmp/${XRAY_ASSET}" | sha256sum --check --status
               unzip -p "/tmp/${XRAY_ASSET}" xray > "package/bin/xray-linux-${TARGET_ARCH}"
               chmod 0755 "package/bin/xray-linux-${TARGET_ARCH}"
               cp bin/geoip.dat bin/geosite.dat package/bin/
               cp x-ui.service x-ui.sh scripts/install.sh package/
+              test "$(cat config/version)" = "${RELEASE_TAG#v}"
+              if [[ "$TARGET_ARCH" == "amd64" ]]; then
+                test_dir="$(mktemp -d)"
+                (
+                  cd package
+                  export XUI_DB_PATH="$test_dir/x-ui.db"
+                  test "$(./x-ui -v)" = "${RELEASE_TAG#v}"
+                  printf "%s" "release-smoke-password" | ./x-ui setting -username smoke-admin -password-stdin
+                  ./x-ui check
+                )
+                rm -rf "$test_dir"
+              fi
               tar -czf "x-ui-linux-${TARGET_ARCH}.tar.gz" -C package .
             '
       - uses: actions/upload-artifact@v4
@@ -81,4 +98,6 @@ jobs:
           gh release create "$TAG_NAME" release-assets/x-ui-linux-*.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
             --title "X-UI Lite $TAG_NAME" \
-            --generate-notes
+            --verify-tag \
+            --latest \
+            --notes-from-tag

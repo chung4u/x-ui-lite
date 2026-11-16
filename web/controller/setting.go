@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"github.com/gin-gonic/gin"
+	"net/http"
 	"strings"
 	"time"
 	"x-ui/web/entity"
@@ -42,11 +43,22 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/setting")
 
 	g.POST("/all", a.getAllSetting)
+	g.POST("/applyState", a.getSettingApplyState)
 	g.POST("/update", a.updateSetting)
 	g.POST("/updateUser", a.updateUser)
 	g.POST("/restartPanel", a.restartPanel)
 	g.POST("/certificateInfo", a.getCertificateInfo)
 	g.POST("/generateCertificate", a.generateCertificate)
+}
+
+func (a *SettingController) getSettingApplyState(c *gin.Context) {
+	saved, err := a.settingService.GetAllSetting()
+	if err != nil {
+		jsonMsg(c, "读取配置生效状态", err)
+		return
+	}
+	core := service.XrayService{}
+	jsonObj(c, service.WithCoreApplyState(service.CurrentSettingApplyState(saved), core.GetApplyState()), nil)
 }
 
 func (a *SettingController) getAllSetting(c *gin.Context) {
@@ -70,6 +82,7 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 }
 
 func (a *SettingController) updateUser(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
 	form := &updateUserForm{}
 	err := c.ShouldBind(form)
 	if err != nil {
@@ -77,7 +90,7 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		return
 	}
 	user := session.GetLoginUser(c)
-	if user.Username != form.OldUsername || user.Password != form.OldPassword {
+	if user == nil || len(form.OldPassword) > 1024 || len(form.OldUsername) > 512 {
 		jsonMsg(c, "修改用户", errors.New("原用户名或原密码错误"))
 		return
 	}
@@ -85,11 +98,14 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		jsonMsg(c, "修改用户", errors.New("新用户名和新密码不能为空"))
 		return
 	}
-	err = a.userService.UpdateUser(user.Id, form.NewUsername, form.NewPassword)
+	finish, allowed := session.BeginAuthentication(c, user.Username)
+	if !allowed {
+		return
+	}
+	defer finish()
+	err = a.userService.ChangeCredentials(user.Id, form.OldUsername, form.OldPassword, form.NewUsername, form.NewPassword)
 	if err == nil {
-		user.Username = form.NewUsername
-		user.Password = form.NewPassword
-		session.SetLoginUser(c, user)
+		err = session.ClearSession(c)
 	}
 	jsonMsg(c, "修改用户", err)
 }

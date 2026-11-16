@@ -1,5 +1,13 @@
 # 更新记录
 
+## v1.1.0 · 2026-11-16
+
+- 统一 VLESS 入站和用户管理。支持个人额度、到期时间、额度周期、今日用量和订阅分发，保留历史共享配额。
+- 支持托管 XHTTP 和转发 REALITY 的公开连接参数，提供证书检查、候选站点核验和配置检查。
+- 支持接入独立的 Hysteria 2 服务，按同一用户合计 VLESS 和 HY2 用量。发行包内置 Xray 26.11.9。
+- 优化运行状态、每日流量和设置保存反馈。持续 CPU 高负载由服务端采样确认。
+- 管理员密码迁移到 Argon2id，加入会话撤销、CSRF 防护和登录限速。首次安装生成随机密码。升级前请备份数据库并确认 HTTPS 或 SSH 隧道可用。[管理员安全升级](docs/admin-upgrade.md)
+
 ## v1.0.2 · 2026-09-03 · REALITY 伪装站点更新
 
 - 移除不可用的 Microsoft 与 Bing 预设，更新为 Apple、Cloudflare、Speedtest、NVIDIA 与 Amazon。

@@ -1,8 +1,13 @@
 {{define "form/vless"}}
+<div v-if="dbInbound.isUserManageable && dbInbound.id" class="managed-entry-summary">
+    <strong>[[ inbound.settings.vlesses.length ]] 位用户</strong>
+    <a-button icon="team" @click="openManagedUsers">用户管理</a-button>
+</div>
+<template v-else>
 <div class="vless-user-editor">
     <div class="vless-user-editor-head">
         <span>VLESS 用户</span>
-        <a-button type="primary" size="small" icon="user-add" @click="inbound.settings.addVless()">新增用户</a-button>
+        <a-button type="primary" size="small" icon="user-add" :loading="inModal.newUserLoading" :disabled="inModal.uuidLoading" @click="addVlessUser">新增用户</a-button>
     </div>
     <div class="vless-user-row" v-for="(user, index) in inbound.settings.vlesses" :key="user.id">
         <a-form layout="inline">
@@ -10,9 +15,9 @@
                 <a-input v-model.trim="user.email" placeholder="例如：iPhone"></a-input>
             </a-form-item>
             <a-form-item label="UUID">
-                <a-input v-model.trim="user.id"></a-input>
+                <a-input v-model.trim="user.id" :disabled="inModal.uuidLoading" :placeholder="inModal.uuidLoading ? '正在生成安全标识…' : ''"></a-input>
             </a-form-item>
-            <a-form-item v-if="inbound.xtls || inbound.stream.security === 'reality'" label="flow">
+            <a-form-item v-if="!inbound.isXHTTP && (inbound.xtls || inbound.stream.security === 'reality')" label="flow">
                 <a-select v-model="user.flow" style="width: 150px">
                     <a-select-option value="">无</a-select-option>
                     <a-select-option v-for="key in FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>
@@ -23,9 +28,14 @@
             </a-form-item>
         </a-form>
     </div>
+    <a-alert v-if="inModal.uuidError" type="error" show-icon :message="inModal.uuidError"></a-alert>
+    <a-button v-if="inModal.realityPreset && inbound.settings.vlesses.some(user => !user.id)" size="small" :loading="inModal.uuidLoading" @click="inModal.prepareFirstUserUUID">重新生成安全标识</a-button>
 </div>
 
-<a-form layout="inline">
+</template>
+<template v-if="!dbInbound.isManagedExternal">
+
+<a-form layout="inline" v-if="!inbound.isXHTTP">
     <a-form-item label="fallbacks">
         <a-row>
             <a-button type="primary" size="small"
@@ -37,7 +47,7 @@
 </a-form>
 
 <!-- vless fallbacks -->
-<a-form v-for="(fallback, index) in inbound.settings.fallbacks" layout="inline">
+<a-form v-for="(fallback, index) in inbound.settings.fallbacks" v-if="!inbound.isXHTTP" layout="inline">
     <a-divider>
         fallback[[ index + 1 ]]
         <a-icon type="delete" @click="() => inbound.settings.delFallback(index)"
@@ -60,4 +70,5 @@
     </a-form-item>
     <a-divider v-if="inbound.settings.fallbacks.length - 1 === index"/>
 </a-form>
+</template>
 {{end}}

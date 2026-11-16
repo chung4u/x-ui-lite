@@ -5,7 +5,7 @@
 </a-menu-item>
 <a-menu-item key="{{ .base_path }}xui/inbounds">
     <a-icon type="cluster"></a-icon>
-    <span>入站列表</span>
+    <span>用户管理</span>
 </a-menu-item>
 <a-menu-item key="{{ .base_path }}xui/setting">
     <a-icon type="setting"></a-icon>
@@ -94,7 +94,10 @@
                     content: '退出后需要重新输入管理账号才能访问控制面板。',
                     okText: '退出登录',
                     cancelText: '取消',
-                    onOk: go,
+                    onOk: async () => {
+                        const msg = await HttpUtil.post('/logout', {});
+                        if (msg.success) location.href = basePath;
+                    },
                 });
                 return;
             }

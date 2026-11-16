@@ -39,6 +39,10 @@ class DBInbound {
         this.trafficResetPeriod = "";
         this.trafficResetDay = 1;
         this.trafficExhausted = false;
+        this.externalHost = '';
+        this.externalPort = 0;
+        this.externalTls = false;
+        this.archivedAt = 0;
 
         this.listen = "";
         this.port = 0;
@@ -87,11 +91,36 @@ class DBInbound {
     }
 
     get address() {
+        if (this.externalHost) return this.externalHost;
         let address = location.hostname;
         if (!ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0") {
             address = this.listen;
         }
         return address;
+    }
+
+    get publicPort() {
+        return this.externalPort || this.port;
+    }
+
+    get isManagedExternal() {
+        return !!(this.externalHost && this.externalPort && this.externalTls);
+    }
+
+    get isUserManageable() {
+        return this.protocol === Protocols.VLESS && !this.archivedAt;
+    }
+
+    get connectionLabel() {
+        return `${this.externalHost || location.hostname}:${this.publicPort}`;
+    }
+
+    get transportLabel() {
+        let stream = {};
+        try { stream = JSON.parse(this.streamSettings || '{}'); } catch (_) {}
+        const network = String(stream.network || 'tcp').toUpperCase();
+        const security = this.externalTls ? 'TLS' : String(stream.security || '').toUpperCase();
+        return security && security !== 'NONE' ? `${network}＋${security}` : network;
     }
 
     get _expiryTime() {
@@ -146,6 +175,11 @@ class DBInbound {
 
     genLink() {
         const inbound = this.toInbound();
+		inbound.port = this.publicPort;
+        if (this.isManagedExternal) {
+            inbound.stream.security = 'tls';
+            inbound.stream.tls.server = this.externalHost;
+        }
         return inbound.genLink(this.address, this.remark);
     }
 

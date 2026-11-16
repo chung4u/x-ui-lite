@@ -1,8 +1,9 @@
 package controller
 
 import (
+	"encoding/base64"
+	"mime"
 	"net/http"
-	"strings"
 	"x-ui/web/service"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,7 @@ func (a *SubscriptionController) getVLESSSubscription(c *gin.Context) {
 		c.String(http.StatusNotFound, "订阅不存在或已失效")
 		return
 	}
-	fileName := strings.ReplaceAll(profile.FileName, "\"", "")
-	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+	c.Header("profile-title", "base64:"+base64.StdEncoding.EncodeToString([]byte(profile.Connection.Name)))
+	c.Header("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": profile.FileName}))
 	c.Data(http.StatusOK, "text/yaml; charset=utf-8", []byte(profile.ClashVergeConfig))
 }

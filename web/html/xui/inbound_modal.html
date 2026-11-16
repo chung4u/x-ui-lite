@@ -3,7 +3,7 @@
          :closable="true" :mask-closable="false" :keyboard="false" :width="880"
          wrap-class-name="inbound-modal-wrap" @cancel="inModal.requestClose">
     <a-alert v-if="validationError" class="inbound-validation-alert" type="error" show-icon
-             message="无法保存当前配置" :description="validationError"></a-alert>
+             message="无法保存当前入口" :description="validationError" tabindex="-1"></a-alert>
     <div class="inbound-change-summary" v-if="changeSummary.length > 0">
         <a-icon type="edit"></a-icon>
         <span>本次将变更：[[ changeSummary.join('、') ]]</span>
@@ -12,7 +12,7 @@
     <template slot="footer">
         <span class="modal-shortcut-hint">⌘ / Ctrl + Enter 保存</span>
         <a-button @click="inModal.requestClose">{{ i18n "close" }}</a-button>
-        <a-button type="primary" :loading="inModal.confirmLoading" @click="inModal.ok">
+        <a-button type="primary" :loading="inModal.confirmLoading" :disabled="inModal.isPreparing()" @click="inModal.ok">
             [[ inModal.okText ]]
         </a-button>
     </template>
@@ -20,20 +20,18 @@
 <script>
 
     const realitySiteOptions = Object.freeze([
-        {value: 'apple', label: 'Apple', serverName: 'www.apple.com', dest: 'www.apple.com:443'},
+        {value: 'mozilla', label: 'Mozilla Add-ons', serverName: 'addons.mozilla.org', dest: 'addons.mozilla.org:443'},
         {value: 'cloudflare', label: 'Cloudflare', serverName: 'www.cloudflare.com', dest: 'www.cloudflare.com:443'},
         {value: 'speedtest', label: 'Speedtest', serverName: 'www.speedtest.net', dest: 'www.speedtest.net:443'},
         {value: 'nvidia', label: 'NVIDIA', serverName: 'www.nvidia.com', dest: 'www.nvidia.com:443'},
         {value: 'amazon', label: 'Amazon', serverName: 'www.amazon.com', dest: 'www.amazon.com:443'},
     ]);
 
-    const defaultRealitySite = realitySiteOptions[0];
-
     const inModal = {
         title: '',
         visible: false,
         confirmLoading: false,
-        okText: '确定',
+        okText: '保存',
         confirm: null,
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
@@ -41,22 +39,109 @@
         usedPorts: [],
         baseline: '',
         validationError: '',
+        advancedOpen: false,
         realityPublicKey: '',
         realityKeyLoading: false,
         realityShortIDLoading: false,
+        realityShortIDGenerationFailed: false,
+        realityPreset: false,
+        realityKeyError: '',
+        realityTargetState: 'unchecked',
+        realityTargetMessage: '',
+        sessionSeq: 0,
+        keyRequestSeq: 0,
+        shortIDRequestSeq: 0,
+        targetRequestSeq: 0,
+        uuidLoading: false,
+        newUserLoading: false,
+        uuidError: '',
+        uuidRequestSeq: 0,
+        createSecureUUID() {
+            try {
+                if (window.crypto.randomUUID) return window.crypto.randomUUID();
+                const bytes = new Uint8Array(16);
+                window.crypto.getRandomValues(bytes);
+                bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+                const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+                return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+            } catch (_) { return ''; }
+        },
+        async requestSecureUUID() {
+            const local = this.createSecureUUID();
+            if (local) return local;
+            const msg = await HttpUtil.post('/xui/inbound/realityUUID');
+            if (!msg || !msg.success || !msg.obj || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(msg.obj.clientId)) throw new Error('UUID');
+            return msg.obj.clientId;
+        },
+        async prepareFirstUserUUID() {
+            const user = (this.inbound.settings.vlesses || [])[0];
+            if (!this.realityPreset || !user || user.id || this.uuidLoading) return;
+            const session = this.sessionSeq, sequence = ++this.uuidRequestSeq, inbound = this.inbound;
+            this.uuidLoading = true; this.uuidError = '';
+            try {
+                const id = await this.requestSecureUUID();
+                if (session !== this.sessionSeq || sequence !== this.uuidRequestSeq || inbound !== this.inbound || !this.visible || user.id) return;
+                user.id = id;
+                if (this.baseline) {
+                    const baseline = JSON.parse(this.baseline), settings = JSON.parse(baseline.protocol);
+                    const original = (settings.clients || []).find(client => !client.id);
+                    if (original) {
+                        original.id = id;
+                        baseline.protocol = JSON.stringify(settings, null, baseline.protocol.includes('\n') ? 2 : 0);
+                        this.baseline = JSON.stringify(baseline);
+                    }
+                }
+            } catch (_) {
+                if (session === this.sessionSeq && sequence === this.uuidRequestSeq && this.visible) this.uuidError = '安全用户标识生成失败，请重试后再添加入口。';
+            } finally {
+                if (session === this.sessionSeq && sequence === this.uuidRequestSeq) this.uuidLoading = false;
+            }
+        },
+        async addVlessUser() {
+            if (this.newUserLoading || this.uuidLoading) return;
+            const session = this.sessionSeq, inbound = this.inbound;
+            this.newUserLoading = true; this.uuidError = '';
+            try {
+                const id = await this.requestSecureUUID();
+                if (session !== this.sessionSeq || inbound !== this.inbound || !this.visible) return;
+                const first = (inbound.settings.vlesses || [])[0];
+                inbound.settings.addVless(new Inbound.VLESSSettings.VLESS(id, first ? first.flow : ''));
+            } catch (_) {
+                if (session === this.sessionSeq && this.visible) this.uuidError = '安全用户标识生成失败，请重新点击新增用户。';
+            } finally {
+                if (session === this.sessionSeq) this.newUserLoading = false;
+            }
+        },
+        isPreparing() {
+            if (this.uuidLoading || this.newUserLoading || (this.realityPreset && (this.inbound.settings.vlesses || []).some(user => !user.id))) return true;
+            if (this.inbound.stream.security !== 'reality') return false;
+            const reality = this.inbound.stream.reality;
+            return this.realityKeyLoading || this.realityShortIDLoading || !reality || !reality.privateKey || (this.realityPreset && (this.realityTargetState !== 'valid' || this.realityShortIDGenerationFailed));
+        },
+        createRealityShortID() {
+            try {
+                const bytes = new Uint8Array(8);
+                window.crypto.getRandomValues(bytes);
+                return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+            } catch (_) {
+                return '';
+            }
+        },
         ensureRealitySettings() {
             const stream = this.inbound.stream;
             if (!stream.reality || typeof stream.reality !== 'object') {
+                const shortID = this.createRealityShortID();
+                this.realityShortIDGenerationFailed = !shortID;
                 stream.reality = {
                     show: false,
-                    dest: defaultRealitySite.dest,
+                    dest: '',
                     xver: 0,
-                    serverNames: [defaultRealitySite.serverName],
+                    serverNames: [''],
                     privateKey: '',
                     minClientVer: '',
                     maxClientVer: '',
                     maxTimeDiff: 0,
-                    shortIds: [''],
+                    shortIds: [shortID],
                     clientFingerprint: 'chrome',
                 };
             }
@@ -66,9 +151,6 @@
             if (!Array.isArray(stream.reality.shortIds) || stream.reality.shortIds.length === 0) {
                 Vue.set(stream.reality, 'shortIds', ['']);
             }
-            if (!stream.reality.clientFingerprint) {
-                Vue.set(stream.reality, 'clientFingerprint', 'chrome');
-            }
             return stream.reality;
         },
         applyRealitySite(site) {
@@ -76,6 +158,85 @@
             const reality = this.ensureRealitySettings();
             Vue.set(reality, 'serverNames', [site.serverName]);
             Vue.set(reality, 'dest', site.dest);
+            this.targetRequestSeq++;
+            this.realityTargetState = 'unchecked';
+            this.realityTargetMessage = '候选站点，需从服务器检测后确认可用。';
+            if (this.visible) this.checkRealityTarget();
+        },
+        selectedRealityCandidate() {
+            const reality = this.inbound.stream.reality || {};
+            return realitySiteOptions.find(site => site.dest === reality.dest && (reality.serverNames || [])[0] === site.serverName);
+        },
+        async checkRealityTarget() {
+            const site = this.selectedRealityCandidate();
+            if (!site || this.realityTargetState === 'checking') return;
+            const session = this.sessionSeq, sequence = ++this.targetRequestSeq, inbound = this.inbound;
+            this.realityTargetState = 'checking';
+            this.realityTargetMessage = '正在从服务器检测 TLS 1.3、HTTP/2 与 SNI 证书…';
+            try {
+                const msg = await HttpUtil.post('/xui/inbound/realityCandidate', {candidate: site.value});
+                if (session !== this.sessionSeq || sequence !== this.targetRequestSeq || inbound !== this.inbound || !this.visible) return;
+                const result = msg && msg.success && msg.obj;
+                this.realityTargetState = result && result.candidate === site.value && result.state === 'valid' ? 'valid' : 'unavailable';
+                this.realityTargetMessage = result && result.message || '检测失败，请重试或选择其他候选站点。';
+            } catch (_) {
+                if (session === this.sessionSeq && sequence === this.targetRequestSeq && this.visible) {
+                    this.realityTargetState = 'unavailable';
+                    this.realityTargetMessage = '检测未完成，请重试或选择其他候选站点。';
+                }
+            }
+        },
+        keepGeneratedDefault(field, previous, value) {
+            if (!this.realityPreset || !this.baseline) return;
+            const baseline = JSON.parse(this.baseline), stream = JSON.parse(baseline.stream);
+            if (stream.realitySettings && JSON.stringify(stream.realitySettings[field]) === JSON.stringify(previous)) {
+                stream.realitySettings[field] = value;
+                baseline.stream = JSON.stringify(stream, null, baseline.stream.includes('\n') ? 2 : 0);
+                this.baseline = JSON.stringify(baseline);
+            }
+        },
+        async requestRealityKey(privateKey = '', replace = true) {
+            if (this.realityKeyLoading) return null;
+            const session = this.sessionSeq, sequence = ++this.keyRequestSeq, inbound = this.inbound;
+            const reality = this.ensureRealitySettings(), before = reality.privateKey;
+            this.realityKeyLoading = true; this.realityKeyError = '';
+            try {
+                const msg = await HttpUtil.post('/xui/inbound/realityKey', {privateKey});
+                if (session !== this.sessionSeq || sequence !== this.keyRequestSeq || inbound !== this.inbound || reality !== this.inbound.stream.reality || reality.privateKey !== before || !this.visible) return null;
+                if (!msg || !msg.success || !msg.obj || !msg.obj.publicKey || (replace && !msg.obj.privateKey)) throw new Error('key');
+                this.realityPublicKey = msg.obj.publicKey;
+                if (replace) {
+                    reality.privateKey = msg.obj.privateKey;
+                    if (!before) this.keepGeneratedDefault('privateKey', before, reality.privateKey);
+                }
+                return msg.obj;
+            } catch (_) {
+                if (session === this.sessionSeq && sequence === this.keyRequestSeq && this.visible) this.realityKeyError = '密钥生成或读取失败，请重试；当前输入已保留。';
+                return null;
+            } finally {
+                if (session === this.sessionSeq && sequence === this.keyRequestSeq) this.realityKeyLoading = false;
+            }
+        },
+        async requestRealityShortID() {
+            if (this.realityShortIDLoading) return false;
+            const session = this.sessionSeq, sequence = ++this.shortIDRequestSeq, inbound = this.inbound;
+            const reality = this.ensureRealitySettings(), before = reality.shortIds.slice();
+            this.realityShortIDLoading = true;
+            try {
+                const msg = await HttpUtil.post('/xui/inbound/realityShortID');
+                if (session !== this.sessionSeq || sequence !== this.shortIDRequestSeq || inbound !== this.inbound || reality !== this.inbound.stream.reality || JSON.stringify(reality.shortIds) !== JSON.stringify(before) || !this.visible) return false;
+                if (!msg || !msg.success || !msg.obj || !/^[0-9a-f]{16}$/.test(msg.obj.shortId)) throw new Error('shortID');
+                const ids = before.slice(); ids[0] = msg.obj.shortId;
+                Vue.set(reality, 'shortIds', ids);
+                this.realityShortIDGenerationFailed = false;
+                if (!before[0]) this.keepGeneratedDefault('shortIds', before, ids);
+                return true;
+            } catch (_) {
+                if (session === this.sessionSeq && sequence === this.shortIDRequestSeq && this.visible) { this.validationError = 'Short ID 生成失败，请重试。'; this.advancedOpen = true; }
+                return false;
+            } finally {
+                if (session === this.sessionSeq && sequence === this.shortIDRequestSeq) this.realityShortIDLoading = false;
+            }
         },
         currentState() {
             return {
@@ -118,50 +279,93 @@
                 return '端口必须是 1–65535 之间的整数。';
             }
             if (this.usedPorts.includes(port)) {
-                return `端口 ${port} 已被其他入站使用，请更换端口。`;
+                return `端口 ${port} 已被其他入口使用，请更换端口。`;
             }
             if (ObjectUtil.isEmpty(this.inbound.protocol)) {
-                return '请选择入站协议。';
+                return '请选择入口协议。';
             }
+            if (this.uuidLoading || this.newUserLoading) return '正在生成安全用户标识，请稍候。';
+            if (this.realityPreset && (this.inbound.settings.vlesses || []).some(user => !user.id)) return '请先生成安全用户标识，再添加入口。';
             if (!Number.isFinite(Number(this.dbInbound.totalGB)) || Number(this.dbInbound.totalGB) < 0) {
                 return '月度流量限额不能小于 0。';
             }
+            if (this.inbound.stream.network === 'xhttp') {
+                const xhttp = this.inbound.stream.xhttp || {};
+                if (!String(xhttp.path || '').startsWith('/')) return 'XHTTP 请求路径必须以 / 开头。';
+                if (!['auto', 'stream-up', 'stream-one', 'packet-up'].includes(xhttp.mode || 'auto')) return '请选择有效的 XHTTP 模式。';
+                if (this.inbound.stream.security === 'reality' || this.inbound.stream.security === 'xtls') return '此 XHTTP 入口请使用 TLS 或外部 TLS 托管。';
+            }
             if (this.inbound.stream.security === 'reality') {
+                if (this.realityKeyLoading || this.realityShortIDLoading) return '正在安全生成 REALITY 配置，请稍候。';
                 const reality = this.inbound.stream.reality || {};
                 const serverName = Array.isArray(reality.serverNames) ? String(reality.serverNames[0] || '').trim() : '';
-                const shortID = Array.isArray(reality.shortIds) ? String(reality.shortIds[0] || '').trim() : '';
-                const isPresetSite = realitySiteOptions.some(site => site.serverName === serverName && site.dest === String(reality.dest || '').trim());
-                if (!isPresetSite) return '请选择预设的 REALITY 伪装站点。';
+                const shortIDs = Array.isArray(reality.shortIds) && reality.shortIds.length ? reality.shortIds : [''];
+                if (!serverName || !String(reality.dest || '').trim()) return '请填写 REALITY 伪装站点与握手目标。';
                 if (!String(reality.privateKey || '').trim()) return '请生成或填写 REALITY 私钥。';
-                if (shortID && !/^[0-9a-fA-F]{1,16}$/.test(shortID)) return 'Short ID 需为 1–16 位十六进制字符。';
+                if (shortIDs.some(id => typeof id !== 'string' || !/^(?:[0-9a-fA-F]{2}){0,8}$/.test(id.trim()))) return 'Short ID 可留空；填写时须为 2–16 位偶数长度十六进制字符。';
+                if (this.realityShortIDGenerationFailed && shortIDs.every(id => !id.trim())) return '当前浏览器无法生成 Short ID，请点击“随机生成”后保存。';
+                if (this.realityPreset && this.realityTargetState !== 'valid') return '请先检测候选站点，通过后即可添加入口。';
             }
             return '';
         },
         normalizeRealityShortID() {
             if (this.inbound.stream.security !== 'reality') return;
             const reality = this.inbound.stream.reality || {};
-            const shortID = Array.isArray(reality.shortIds) ? String(reality.shortIds[0] || '').trim() : '';
-            Vue.set(reality, 'shortIds', shortID ? [shortID] : []);
+            const shortIDs = Array.isArray(reality.shortIds) && reality.shortIds.length ? reality.shortIds : [''];
+            Vue.set(reality, 'shortIds', shortIDs.map(id => id.trim()));
         },
         ok() {
+            if (inModal.confirmLoading) return;
+            if (inModal.inbound.stream.network === 'xhttp') {
+                const users = inModal.inbound.settings.vlesses || [];
+                users.forEach(user => { user.flow = ''; });
+            }
             inModal.validationError = inModal.validate();
             if (inModal.validationError) {
+                if (!/端口|月度流量|伪装站点|候选站点/.test(inModal.validationError)) inModal.advancedOpen = true;
                 window.setTimeout(() => {
-                    const portInput = document.querySelector('#inbound-port-input');
-                    if (portInput) portInput.focus();
+                    const error = inModal.validationError;
+                    const selector = /端口/.test(error) ? '#inbound-port-input' :
+                        /月度流量/.test(error) ? '[aria-label="入口每月额度"] input' :
+                        /候选站点|伪装站点/.test(error) ? '[aria-label="选择 REALITY 伪装站点"] .ant-select-selection' :
+                        /Short ID/.test(error) ? '[aria-label="REALITY Short ID"]' :
+                        /私钥/.test(error) ? '[aria-label="REALITY 私钥"]' : '#inbound-modal .inbound-validation-alert';
+                    const field = document.querySelector(selector) || document.querySelector('#inbound-modal .inbound-validation-alert');
+                    if (field) { if (field.scrollIntoView) field.scrollIntoView({block:'nearest'}); field.focus(); }
                 });
                 return;
             }
             inModal.normalizeRealityShortID();
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
-        show({ title='', okText='确定', inbound=null, dbInbound=null, editingId=0, usedPorts=[], confirm=(inbound, dbInbound)=>{} }) {
-            this.title = title;
-            this.okText = okText;
+        show({ title='', okText='保存', inbound=null, dbInbound=null, editingId=0, usedPorts=[], confirm=(inbound, dbInbound)=>{} }) {
+            this.sessionSeq++;
+            this.realityPreset = !inbound && !editingId;
+            this.realityKeyError = '';
+            this.realityTargetState = 'unchecked';
+            this.realityTargetMessage = '';
+            this.uuidLoading = false;
+            this.newUserLoading = false;
+            this.uuidError = '';
+            this.title = title ? title.replace(/入站/g, '入口') : (editingId ? '入口设置' : '添加入口');
+            this.okText = '保存';
+            this.advancedOpen = false;
+            this.realityShortIDGenerationFailed = false;
             if (inbound) {
                 this.inbound = Inbound.fromJson(inbound.toJson());
             } else {
                 this.inbound = new Inbound();
+                this.inbound.stream.network = 'tcp';
+                this.inbound.stream.security = 'reality';
+                this.inbound.settings.decryption = 'none';
+                // Replace the model's legacy random ID before it reaches the
+                // form. If Web Crypto is missing, wait for a server UUID.
+                (this.inbound.settings.vlesses || []).forEach(user => { user.id = this.createSecureUUID(); });
+                (this.inbound.settings.vlesses || []).forEach(user => { user.flow = 'xtls-rprx-vision'; });
+                this.ensureRealitySettings();
+                // A candidate is preselected, but only a successful server probe
+                // may label it as recommended. Existing entries are never reset.
+                this.applyRealitySite(realitySiteOptions[0]);
             }
             if (this.inbound.stream.security === 'reality') {
                 this.ensureRealitySettings();
@@ -173,6 +377,13 @@
             }
             this.editingId = editingId;
             this.usedPorts = usedPorts.map(port => Number(port));
+            if (this.realityPreset && this.usedPorts.includes(Number(this.inbound.port))) {
+                const start = Number(this.inbound.port);
+                for (let offset = 1; offset <= 50001; offset++) {
+                    const candidate = 10000 + ((start - 10000 + offset) % 50001);
+                    if (!this.usedPorts.includes(candidate)) { this.inbound.port = candidate; break; }
+                }
+            }
             this.confirm = confirm;
             this.validationError = '';
             this.realityPublicKey = '';
@@ -180,19 +391,35 @@
             this.realityShortIDLoading = false;
             this.visible = true;
             this.baseline = this.stateSignature();
+            if (this.realityPreset) {
+                this.prepareFirstUserUUID();
+                this.requestRealityKey();
+                if (this.realityShortIDGenerationFailed) this.requestRealityShortID();
+                this.checkRealityTarget();
+            }
             window.setTimeout(() => {
                 const remarkInput = document.querySelector('#inbound-remark-input');
                 if (remarkInput) remarkInput.focus();
             }, 120);
         },
         close() {
+            this.sessionSeq++;
             this.visible = false;
             this.loading(false);
             this.validationError = '';
+            this.advancedOpen = false;
             this.baseline = '';
             this.realityPublicKey = '';
             this.realityKeyLoading = false;
             this.realityShortIDLoading = false;
+            this.realityShortIDGenerationFailed = false;
+            this.realityPreset = false;
+            this.realityKeyError = '';
+            this.realityTargetState = 'unchecked';
+            this.realityTargetMessage = '';
+            this.uuidLoading = false;
+            this.newUserLoading = false;
+            this.uuidError = '';
         },
         requestClose() {
             if (!inModal.isDirty()) {
@@ -201,7 +428,7 @@
             }
             Vue.prototype.$confirm({
                 title: '放弃未保存的更改？',
-                content: '当前入站配置已修改，关闭后这些更改不会保留。',
+                content: '当前入口配置已修改，关闭后这些更改不会保留。',
                 okText: '放弃更改',
                 okType: 'danger',
                 cancelText: '继续编辑',
@@ -231,6 +458,10 @@
             }
         },
         computed: {
+            securitySectionTitle() {
+                if (inModal.dbInbound.isManagedExternal) return 'TLS 安全';
+                return {reality: 'REALITY 安全', tls: 'TLS 安全', xtls: 'XTLS 安全'}[inModal.inbound.stream.security] || '安全设置';
+            },
             validationError() {
                 return inModal.validationError;
             },
@@ -246,7 +477,7 @@
                     const serverName = Array.isArray(reality.serverNames) ? String(reality.serverNames[0] || '').trim() : '';
                     const dest = String(reality.dest || '').trim();
                     const site = realitySiteOptions.find(option => option.serverName === serverName && option.dest === dest);
-                    return site ? site.value : undefined;
+                    return site ? site.value : (serverName || dest ? '__existing__' : undefined);
                 },
                 set(value) {
                     const site = realitySiteOptions.find(option => option.value === value);
@@ -266,9 +497,27 @@
             },
         },
         methods: {
-            streamNetworkChange(oldValue) {
-                if (oldValue === 'kcp') {
+            addVlessUser() {
+                return inModal.addVlessUser();
+            },
+            openManagedUsers() {
+                if (inModal.isDirty()) {
+                    this.$message.info('请先保存当前配置，再管理用户。');
+                    return;
+                }
+                const entry = new DBInbound(inModal.dbInbound);
+                inModal.close();
+                app.openUsers(entry);
+            },
+            streamNetworkChange(network) {
+                if (network === 'kcp') {
                     this.inModal.inbound.tls = false;
+                }
+                if (network === 'xhttp') {
+                    const stream = this.inModal.inbound.stream;
+                    if (!stream.xhttp) Vue.set(stream, 'xhttp', {host: '', path: '/', mode: 'auto'});
+                    (this.inModal.inbound.settings.vlesses || []).forEach(user => { user.flow = ''; });
+                    if (stream.security === 'reality' || stream.security === 'xtls') stream.security = 'none';
                 }
             },
             ensureRealitySettings() {
@@ -283,20 +532,11 @@
                 stream.security = mode;
             },
             async getRealityKey(privateKey = '') {
-                this.inModal.realityKeyLoading = true;
-                try {
-                    const msg = await HttpUtil.post('/xui/inbound/realityKey', {privateKey});
-                    if (!msg.success) return null;
-                    this.inModal.realityPublicKey = msg.obj.publicKey || '';
-                    return msg.obj;
-                } finally {
-                    this.inModal.realityKeyLoading = false;
-                }
+                return this.inModal.requestRealityKey(privateKey, !privateKey);
             },
             async generateRealityKey() {
                 const pair = await this.getRealityKey();
                 if (!pair) return;
-                this.ensureRealitySettings().privateKey = pair.privateKey;
                 this.$message.success('已生成 REALITY 密钥对');
             },
             async deriveRealityPublicKey() {
@@ -306,15 +546,10 @@
                 this.$message.success('已更新客户端公钥');
             },
             async generateRealityShortID() {
-                this.inModal.realityShortIDLoading = true;
-                try {
-                    const msg = await HttpUtil.post('/xui/inbound/realityShortID');
-                    if (!msg.success || !msg.obj || !msg.obj.shortId) return;
-                    Vue.set(this.ensureRealitySettings(), 'shortIds', [msg.obj.shortId]);
-                    this.$message.success('已生成 Short ID');
-                } finally {
-                    this.inModal.realityShortIDLoading = false;
-                }
+                if (await this.inModal.requestRealityShortID()) this.$message.success('已生成 Short ID');
+            },
+            checkRealityTarget() {
+                return this.inModal.checkRealityTarget();
             }
         },
         mounted() {

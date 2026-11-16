@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Workiva/go-datastructures/queue"
-	statsservice "github.com/xtls/xray-core/app/stats/command"
 	"google.golang.org/grpc"
 	"io/fs"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	statsservice "x-ui/internal/xraystats"
 	"x-ui/util/common"
 )
 

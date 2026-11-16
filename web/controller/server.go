@@ -34,6 +34,10 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 
 	g.Use(a.checkLogin)
 	g.POST("/status", a.status)
+	g.POST("/runtimeTrend", func(c *gin.Context) {
+		rows, err := service.RuntimeTrend()
+		jsonObj(c, rows, err)
+	})
 	g.POST("/getXrayVersion", a.getXrayVersion)
 	g.POST("/installXray/:version", a.installXray)
 }
@@ -45,6 +49,12 @@ func (a *ServerController) refreshStatus() {
 func (a *ServerController) startTask() {
 	webServer := global.GetWebServer()
 	c := webServer.GetCron()
+	collector := &service.RuntimeCollector{}
+	c.AddFunc("@every 10s", func() {
+		if err := collector.Collect(); err != nil {
+			logger.Warning("runtime trend:", err)
+		}
+	})
 	c.AddFunc("@every 10s", func() {
 		if _, err := a.serverService.RefreshMonthlyTraffic(); err != nil {
 			logger.Warning("refresh monthly traffic task failed:", err)
@@ -61,8 +71,15 @@ func (a *ServerController) startTask() {
 
 func (a *ServerController) status(c *gin.Context) {
 	a.lastGetStatusTime = time.Now()
-
-	jsonObj(c, a.lastStatus, nil)
+	status := a.lastStatus
+	if status != nil {
+		// The ten-second collector continues after foreground polling pauses.
+		// Attach its latest diagnosis instead of returning a stale cached flag.
+		copy := *status
+		copy.CPUHealth = service.CurrentCPUHealth()
+		status = &copy
+	}
+	jsonObj(c, status, nil)
 }
 
 func (a *ServerController) getXrayVersion(c *gin.Context) {

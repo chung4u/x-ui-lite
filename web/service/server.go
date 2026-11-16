@@ -35,9 +35,10 @@ const (
 )
 
 type Status struct {
-	T   time.Time `json:"-"`
-	Cpu float64   `json:"cpu"`
-	Mem struct {
+	T         time.Time `json:"-"`
+	Cpu       float64   `json:"cpu"`
+	CPUHealth CPUHealth `json:"cpuHealth"`
+	Mem       struct {
 		Current uint64 `json:"current"`
 		Total   uint64 `json:"total"`
 	} `json:"mem"`
@@ -70,6 +71,7 @@ type Status struct {
 }
 
 type MonthlyTraffic struct {
+	Today              string         `json:"today"`
 	Enabled            bool           `json:"enabled"`
 	Limit              uint64         `json:"limit"`
 	Used               uint64         `json:"used"`
@@ -85,10 +87,11 @@ type MonthlyTraffic struct {
 }
 
 type DailyTraffic struct {
-	Date string `json:"date"`
-	Used uint64 `json:"used"`
-	Up   uint64 `json:"up"`
-	Down uint64 `json:"down"`
+	Estimated bool   `json:"estimated,omitempty"`
+	Date      string `json:"date"`
+	Used      uint64 `json:"used"`
+	Up        uint64 `json:"up"`
+	Down      uint64 `json:"down"`
 }
 
 type Release struct {
@@ -179,6 +182,22 @@ func trafficDailyForPeriod(daily map[string]uint64, periodStart, now time.Time) 
 		}
 	}
 	return result
+}
+
+func trafficDailyTotal(daily map[string]uint64) uint64 {
+	var total uint64
+	for _, value := range daily {
+		total += value
+	}
+	return total
+}
+
+func cloneTrafficDaily(daily map[string]uint64) map[string]uint64 {
+	cloned := make(map[string]uint64, len(daily))
+	for date, value := range daily {
+		cloned[date] = value
+	}
+	return cloned
 }
 
 func trimTrafficDailyMap(daily map[string]uint64, now time.Time, retentionDays int) bool {
@@ -288,14 +307,20 @@ func (s *ServerService) refreshTrafficConfigLocked(now time.Time) error {
 }
 
 func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
-	sent, received, err := externalNetworkTraffic()
+	return s.refreshMonthlyTraffic(externalNetworkTraffic)
+}
+
+func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint64, error)) (MonthlyTraffic, error) {
+	// Serialize the observation as well as its application. Otherwise a delayed
+	// older observation can look like a reboot and add the entire OS counter.
+	s.trafficMu.Lock()
+	defer s.trafficMu.Unlock()
+
+	sent, _, err := readCounters()
 	if err != nil {
 		return MonthlyTraffic{}, err
 	}
 	now := time.Now()
-
-	s.trafficMu.Lock()
-	defer s.trafficMu.Unlock()
 
 	if err := s.refreshTrafficConfigLocked(now); err != nil {
 		return MonthlyTraffic{}, err
@@ -317,7 +342,6 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.PeriodStart = periodKey
 		s.trafficState.UsedBytes = 0
 		s.trafficState.LastSent = sent
-		s.trafficState.LastRecv = received
 		forcePersist = true
 	}
 	if s.trafficState.DailyTraffic == nil {
@@ -328,17 +352,10 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.DailyUpload = make(map[string]uint64)
 		forcePersist = true
 	}
-	if s.trafficState.DailyDownload == nil {
-		s.trafficState.DailyDownload = make(map[string]uint64)
-		forcePersist = true
-	}
 	if trimTrafficDailyMap(s.trafficState.DailyTraffic, localNow, trafficRetentionDays) {
 		forcePersist = true
 	}
 	if trimTrafficDailyMap(s.trafficState.DailyUpload, localNow, trafficRetentionDays) {
-		forcePersist = true
-	}
-	if trimTrafficDailyMap(s.trafficState.DailyDownload, localNow, trafficRetentionDays) {
 		forcePersist = true
 	}
 
@@ -349,7 +366,6 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficState.Initialized = false
 		s.trafficState.UsedBytes = 0
 		s.trafficState.LastSent = sent
-		s.trafficState.LastRecv = received
 		s.trafficSnapshot = MonthlyTraffic{
 			Enabled:     false,
 			ResetDay:    s.trafficResetDay,
@@ -360,37 +376,39 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		if !s.trafficState.Initialized {
 			s.trafficState.Initialized = true
 			s.trafficState.LastSent = sent
-			s.trafficState.LastRecv = received
 			forcePersist = true
 		} else {
 			uploadDelta := trafficCounterDelta(sent, s.trafficState.LastSent)
-			downloadDelta := trafficCounterDelta(received, s.trafficState.LastRecv)
-			delta := uploadDelta + downloadDelta
 			dateKey := localNow.Format("2006-01-02")
-			s.trafficState.UsedBytes += delta
-			s.trafficState.DailyTraffic[dateKey] += delta
 			s.trafficState.DailyUpload[dateKey] += uploadDelta
-			s.trafficState.DailyDownload[dateKey] += downloadDelta
 			s.trafficState.LastSent = sent
-			s.trafficState.LastRecv = received
 		}
 		dateKey := localNow.Format("2006-01-02")
-		if _, ok := s.trafficState.DailyTraffic[dateKey]; !ok {
-			s.trafficState.DailyTraffic[dateKey] = 0
+		if _, ok := s.trafficState.DailyUpload[dateKey]; !ok {
+			s.trafficState.DailyUpload[dateKey] = 0
 			forcePersist = true
 		}
+		// Cloud providers charge egress traffic. Rebuild the legacy combined map
+		// from upload history so upgrades immediately use the same upload-only
+		// accounting for the cycle total, forecast and daily trend.
+		s.trafficState.DailyTraffic = cloneTrafficDaily(s.trafficState.DailyUpload)
 
 		limit := uint64(s.trafficLimitGB) * bytesPerGB
 		nextReset := trafficNextReset(periodStart, s.trafficResetDay)
-		periodDaily := trafficDailyForPeriod(s.trafficState.DailyTraffic, periodStart, localNow)
-		averageDaily, projected, confidence := trafficForecast(s.trafficState.UsedBytes, periodDaily, localNow, nextReset)
+		periodDaily := trafficDailyForPeriod(s.trafficState.DailyUpload, periodStart, localNow)
+		uploadUsed := trafficDailyTotal(periodDaily)
+		if s.trafficState.UsedBytes != uploadUsed {
+			s.trafficState.UsedBytes = uploadUsed
+			forcePersist = true
+		}
+		averageDaily, projected, confidence := trafficForecast(uploadUsed, periodDaily, localNow, nextReset)
 		remaining := uint64(0)
-		if s.trafficState.UsedBytes < limit {
-			remaining = limit - s.trafficState.UsedBytes
+		if uploadUsed < limit {
+			remaining = limit - uploadUsed
 		}
 		percent := float64(0)
 		if limit > 0 {
-			percent = float64(s.trafficState.UsedBytes) / float64(limit) * 100
+			percent = float64(uploadUsed) / float64(limit) * 100
 			if percent > 100 {
 				percent = 100
 			}
@@ -398,17 +416,23 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		s.trafficSnapshot = MonthlyTraffic{
 			Enabled:            true,
 			Limit:              limit,
-			Used:               s.trafficState.UsedBytes,
+			Used:               uploadUsed,
 			Remaining:          remaining,
 			Percent:            percent,
 			ResetDay:           s.trafficResetDay,
 			PeriodStart:        periodStart,
 			NextReset:          nextReset,
-			Daily:              trafficDailySeries(s.trafficState.DailyTraffic, s.trafficState.DailyUpload, s.trafficState.DailyDownload, localNow, trafficHistoryDays),
+			Daily:              trafficDailySeries(s.trafficState.DailyUpload, s.trafficState.DailyUpload, nil, localNow, trafficHistoryDays),
 			AverageDaily:       averageDaily,
 			ProjectedPeriodEnd: projected,
 			ForecastConfidence: confidence,
 		}
+	}
+
+	// Use the same server time zone as the daily series, independent of the browser.
+	s.trafficSnapshot.Today = localNow.Format("2006-01-02")
+	for i := range s.trafficSnapshot.Daily {
+		s.trafficSnapshot.Daily[i].Estimated = s.trafficState.DailyEstimated[s.trafficSnapshot.Daily[i].Date]
 	}
 
 	if forcePersist || now.Sub(s.trafficLastPersist) >= 30*time.Second {
@@ -417,6 +441,7 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 		}
 		s.trafficLastPersist = now
 	}
+	recordTrafficRuntimeSettings(s.trafficLimitGB, s.trafficResetDay)
 	return s.trafficSnapshot, nil
 }
 
@@ -429,9 +454,11 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	percents, err := cpu.Percent(0, false)
 	if err != nil {
 		logger.Warning("get cpu percent failed:", err)
-	} else {
+	} else if len(percents) > 0 {
 		status.Cpu = percents[0]
 	}
+	runtimeCPUHealth.observe(time.Now(), status.Cpu, err == nil && len(percents) > 0)
+	status.CPUHealth = CurrentCPUHealth()
 
 	upTime, err := host.Uptime()
 	if err != nil {

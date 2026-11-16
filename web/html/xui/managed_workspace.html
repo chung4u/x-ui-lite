@@ -1,0 +1,143 @@
+{{define "managedWorkspaceTemplate"}}
+<script type="text/x-template" id="managed-workspace-template">
+<section v-if="entry" class="managed-workspace" aria-label="入口与用户管理">
+    <div class="mw-entry">
+        <div class="mw-entry-main">
+            <div class="mw-entry-heading">
+                <span class="mw-heading-icon" aria-hidden="true"><a-icon type="cloud-server"></a-icon></span>
+                <a-select v-if="entries.length > 1" :value="entry.id" :disabled="drawerVisible" aria-label="切换入口" @change="switchEntry">
+                    <a-select-option v-for="item in entries" :key="item.id" :value="item.id">[[ item.remark || '未命名入口' ]] · [[ item.transportLabel ]] · [[ entryUserCount(item) ]] 位用户[[ item.enable ? '' : ' · 已停用' ]]</a-select-option>
+                </a-select>
+                <h2 v-else>[[ entry.remark || '统一入口' ]]</h2>
+                <a-tag>[[ entry.transportLabel ]]</a-tag>
+            </div>
+            <div class="mw-endpoint">[[ entry.connectionLabel ]]</div>
+            <div v-if="!entry.enable" class="mw-entry-status">
+                <a-tag color="orange">入口已停用</a-tag>
+            </div>
+        </div>
+        <div class="mw-entry-actions">
+            <a-button icon="setting" @click="$emit('settings',entry)">入口设置</a-button>
+            <a-button type="link" icon="link" @click="$emit('details',entry)">连接详情</a-button>
+        </div>
+    </div>
+    <a-alert v-if="runtimeIssue" type="error" show-icon class="mw-runtime-alert" :message="runtimeIssue">
+        <a-button slot="description" size="small" @click="$emit('runtime-details',entry)">查看原因</a-button>
+    </a-alert>
+    <div class="mw-summary mw-summary-daily" aria-label="当前入口概览">
+        <button class="mw-summary-accounts mw-summary-stat" type="button" aria-label="查看全部用户" @click="setFilter('all')" :aria-pressed="!filtering ? 'true' : 'false'">
+            <span class="mw-summary-label mw-icon-label"><span class="mw-metric-icon" aria-hidden="true"><a-icon type="team"></a-icon></span>全部用户</span>
+            <strong class="mw-summary-value">[[ users.length ]] <small>个</small></strong>
+        </button>
+        <button class="mw-summary-attention mw-summary-stat" type="button" :disabled="attentionCount === null" @click="setFilter(!query && filter==='attention' ? 'all' : 'attention')" :aria-pressed="!query && filter==='attention' ? 'true' : 'false'">
+            <span class="mw-summary-label mw-icon-label"><span class="mw-metric-icon" :class="attentionCount === null ? 'is-muted' : attentionCount > 0 ? 'is-warning' : 'is-success'" aria-hidden="true"><a-icon :type="attentionCount === null ? 'question-circle' : attentionCount > 0 ? 'warning' : 'check-circle'"></a-icon></span>需要关注 <a-icon type="arrow-right" aria-hidden="true"></a-icon></span>
+            <strong class="mw-summary-value" :class="{'mw-warning':attentionCount > 0}">[[ attentionCount === null ? '—' : attentionCount ]] <small v-if="attentionCount !== null">个</small></strong>
+        </button>
+        <button class="mw-today-active mw-summary-stat" type="button" :disabled="todayActiveCount === null" @click="setFilter(!query && filter==='active' ? 'all' : 'active')" :aria-pressed="!query && filter==='active' ? 'true' : 'false'">
+            <span class="mw-summary-label mw-icon-label"><span class="mw-metric-icon is-violet" aria-hidden="true"><a-icon type="usergroup-add"></a-icon></span>今日活跃</span>
+            <strong class="mw-summary-value">[[ todayActiveCount === null ? '—' : todayActiveCount ]] <small v-if="todayActiveCount !== null">个</small></strong>
+        </button>
+        <button class="mw-summary-stat" type="button" @click="sort='today'" :aria-pressed="sort==='today' ? 'true' : 'false'" :title="todayTotalHint">
+            <span class="mw-summary-label mw-icon-label"><span class="mw-metric-icon" aria-hidden="true"><a-icon type="swap"></a-icon></span>今日总用量 <a-icon v-if="todayTotal === null || users.some(u => policy(u) && policy(u).todayPartial)" type="info-circle" aria-label="统计说明"></a-icon></span>
+            <strong class="mw-summary-value mw-daily-total">[[ todayTotal === null ? '—' : sizeFormat(todayTotal) ]]</strong>
+        </button>
+    </div>
+    <a-alert v-if="failed" type="warning" show-icon class="mw-alert" :message="hasSnapshot ? '刷新失败，正在显示上次读取的数据' : '用户状态与额度暂未获取'">
+        <a-button slot="description" size="small" :loading="loading" @click="load">重新读取</a-button>
+    </a-alert>
+    <a-card class="mw-content" :bordered="false">
+        <div class="mw-toolbar mw-stable-toolbar">
+            <a-input ref="search" v-model.trim="query" allow-clear placeholder="搜索用户名称" aria-label="搜索用户名称" aria-keyshortcuts="/" @keydown.native.esc="clearSearch">
+                <a-icon slot="prefix" type="search"></a-icon><kbd v-if="!query" slot="suffix" class="mw-search-key" aria-hidden="true">/</kbd>
+            </a-input>
+            <a-radio-group v-model="filter" size="small" button-style="solid" class="mw-filter-tabs" aria-label="用户筛选">
+                <a-radio-button value="all">全部</a-radio-button><a-radio-button value="attention">需要关注</a-radio-button><a-radio-button value="disabled">手动停用</a-radio-button><a-radio-button value="active">今日活跃</a-radio-button>
+            </a-radio-group>
+            <a-select v-model="filter" size="small" class="mw-filter-select" aria-label="用户筛选"><a-select-option value="all">全部用户</a-select-option><a-select-option value="attention">需要关注</a-select-option><a-select-option value="disabled">手动停用</a-select-option><a-select-option value="active">今日活跃</a-select-option></a-select>
+            <a-select v-model="sort" size="small" class="mw-sort-select" aria-label="用户排序"><a-select-option value="name">按名称</a-select-option><a-select-option value="traffic">按周期用量</a-select-option><a-select-option value="today">按今日用量</a-select-option><a-select-option value="usage">按使用率</a-select-option><a-select-option value="expiry">最近到期</a-select-option></a-select>
+            <a-button type="primary" icon="user-add" aria-label="新增用户" :disabled="!ready" @click="openUser(null)">新增用户</a-button>
+        </div>
+        <div v-if="sharedResetDay" class="mw-cycle-note">用量每月 [[ sharedResetDay ]] 日重置</div>
+        <div v-if="filtering" class="mw-filter-context">
+            <span role="status"><template v-if="!filterStatusNote || visibleUsers.length">显示 <strong>[[ visibleUsers.length ]] / [[ users.length ]]</strong> 个用户</template><span v-if="filterStatusNote">[[ visibleUsers.length ? ' · ' : '' ]][[ filterStatusNote ]]</span></span>
+            <a-button type="link" size="small" @click="setFilter('all')">清除筛选</a-button>
+        </div>
+        <a-spin :spinning="loading">
+            <table v-if="visibleUsers.length" class="mw-users-table">
+                <thead><tr><th scope="col"><a-icon type="user" aria-hidden="true"></a-icon> 用户 / 状态</th><th scope="col"><a-icon type="swap" aria-hidden="true"></a-icon> 本周期用量</th><th scope="col"><a-icon type="calendar" aria-hidden="true"></a-icon> 到期时间</th><th scope="col" class="mw-actions-heading">操作</th></tr></thead>
+                <tbody><tr v-for="u in visibleUsers" :key="u.id" :class="{'mw-row-disabled':policy(u) && !policy(u).enabled,'mw-row-attention':needsAttention(u)}">
+                    <td class="mw-user-identity">
+                        <div class="mw-identity-row"><span class="mw-avatar" aria-hidden="true">[[ initials(u) ]]</span><div class="mw-identity-copy">
+                            <button type="button" class="mw-name-button" :disabled="!ready || !policy(u)" @click="openUser(u)">[[ name(u) ]]</button>
+                            <div class="mw-state-line"><span class="mw-status-dot" :class="statusClass(u)" aria-hidden="true"></span><span>[[ status(u) ]]</span></div>
+                            <div v-if="attentionHints(u).length" class="mw-attention-hints"><small v-for="hint in attentionHints(u)" :key="hint" class="mw-warning">[[ hint ]]</small></div>
+                        </div></div>
+                    </td>
+                    <td class="mw-user-traffic">
+                        <template v-if="policy(u)">
+                            <div class="mw-usage-top"><strong>[[ sizeFormat(used(policy(u))) ]] <small v-if="policy(u).total > 0">/ [[ sizeFormat(policy(u).total) ]]</small></strong><span class="mw-usage-percent" :class="usageTone(policy(u))">[[ policy(u).total > 0 ? usagePercentLabel(policy(u)) : '无限额' ]]</span></div>
+                            <a-tooltip v-if="policy(u).total > 0" :title="usageDescription(policy(u))"><div class="mw-usage-track" :class="usageTone(policy(u))" role="img" :aria-label="usageDescription(policy(u))"><span class="mw-usage-upload" :style="{width:usageSegment(policy(u),'up')+'%'}"></span><span class="mw-usage-download" :style="{width:usageSegment(policy(u),'down')+'%'}"></span></div></a-tooltip>
+                            <div v-else class="mw-unlimited-usage"><span>↑ [[ sizeFormat(policy(u).up) ]]</span><span>↓ [[ sizeFormat(policy(u).down) ]]</span></div>
+                            <div class="mw-usage-meta mw-daily-meta"><span>今日 [[ policy(u).todayUsed == null ? '—' : sizeFormat(policy(u).todayUsed) ]] <a-tooltip v-if="policy(u).todayUsed == null || policy(u).todayPartial" :title="policy(u).todayUsed == null ? '今日用量尚未获取' : '北京时间；仅统计开始记录后的今日用量'"><a-icon type="info-circle" tabindex="0" aria-label="今日用量统计说明"></a-icon></a-tooltip></span><span v-if="policy(u).total > 0" aria-hidden="true">·</span><span v-if="policy(u).total > 0" :class="{'mw-warning':usagePercent(policy(u))>=90}">[[ remaining(policy(u)) ]]</span><span v-if="!sharedResetDay">每月 [[ resetDay(policy(u)) ]] 日重置</span></div>
+                        </template><span v-else>用量暂未获取</span>
+                    </td>
+                    <td class="mw-user-expiry"><template v-if="policy(u)"><strong :class="{'mw-warning':expiryHint(policy(u))}" :title="policy(u).expiryTime ? moment(policy(u).expiryTime).format('YYYY-MM-DD HH:mm:ss') : ''">[[ expiry(policy(u)) ]]</strong><small v-if="policy(u).expiryTime && expiryHint(policy(u))" :class="{'mw-warning':expiryHint(policy(u))}">[[ expiryHint(policy(u)) ]]</small></template><span v-else>暂未获取</span></td>
+                    <td class="mw-user-actions">
+                        <div class="mw-compact-actions">
+                            <div class="mw-copy-split">
+                                <a-button size="small" :icon="subscriptionCopied(u) ? 'check' : 'copy'" aria-label="复制订阅" class="mw-copy-primary" :class="{'is-copied':subscriptionCopied(u)}" :disabled="!canExport(u)" :loading="!!pending[u.id]" @click="distribute(u,'subscription')"><span aria-live="polite">[[ subscriptionCopied(u) ? '已复制' : '复制订阅' ]]</span></a-button>
+                                <a-dropdown :trigger="['click']" :placement="distributionPlacement" overlay-class-name="mw-distribution-menu" :disabled="!canExport(u)" :visible="distributionOpenId===u.id" @visibleChange="visible => setDistributionVisible(u,visible)">
+                                    <a-button :ref="'distribution-'+u.id" size="small" icon="down" aria-label="其他分发方式" aria-haspopup="menu" :aria-expanded="distributionOpenId===u.id ? 'true' : 'false'" class="mw-copy-trigger" :disabled="!canExport(u)" @keydown.native.down.prevent.stop="openDistributionMenu(u)" @keydown.native.enter.prevent.stop="openDistributionMenu(u)" @keydown.native.space.prevent.stop="openDistributionMenu(u)" @keydown.native.esc.prevent.stop="closeDistribution(u,true)"></a-button>
+                                    <a-menu :ref="'distribution-menu-'+u.id" slot="overlay" aria-label="连接配置分发方式" @click="event => distributeChoice(u,event.key)" @keydown.native.capture="distributionKey(u,$event)">
+                                        <a-menu-item key="qr" data-distribution-action="qr" tabindex="-1" aria-label="二维码" :disabled="!canExport(u)"><a-icon type="qrcode" aria-hidden="true"></a-icon>二维码</a-menu-item>
+                                        <a-menu-item key="yaml" data-distribution-action="yaml" tabindex="-1" aria-label="下载 Clash 配置" :disabled="!canExport(u)"><a-icon type="download" aria-hidden="true"></a-icon>下载 Clash 配置</a-menu-item>
+                                        <a-menu-item key="link" data-distribution-action="link" tabindex="-1" aria-label="复制单节点链接" :disabled="!canExport(u)"><a-icon type="link" aria-hidden="true"></a-icon>复制单节点链接</a-menu-item>
+                                    </a-menu>
+                                </a-dropdown>
+                            </div>
+                            <a-button size="small" type="link" icon="edit" aria-label="编辑" class="mw-edit" :disabled="!ready || !policy(u)" @click="openUser(u)">编辑</a-button>
+                            <a-button size="small" type="link" icon="delete" aria-label="删除" class="mw-danger" :disabled="!ready || !policy(u)" @click="removeUser(u)">删除</a-button>
+                        </div>
+                        <small v-if="exportHint(u)" class="mw-export-hint">[[ exportHint(u) ]]</small>
+                        <small v-if="exportErrors[u.id]" class="mw-export-hint mw-warning" role="alert">[[ exportErrors[u.id] ]]</small>
+                    </td>
+                </tr></tbody>
+            </table>
+            <a-empty v-else :description="emptyDescription">
+                <a-button v-if="filterStatusNote && !loading && !failed" @click="refresh()">刷新用户与入口</a-button>
+                <a-button v-else-if="!users.length && !filterStatusNote" type="primary" :disabled="!ready" @click="openUser(null)">新增用户</a-button>
+            </a-empty>
+        </a-spin>
+    </a-card>
+    <a-drawer :visible="drawerVisible" :title="delivery ? '用户已保存' : editor && editor.create ? '新增用户' : '编辑用户'" :width="480" :mask-closable="false" wrap-class-name="mw-drawer" @close="closeUser">
+        <div v-if="editor" class="mw-editor">
+            <a-alert v-if="saveError" type="error" show-icon :message="saveError"></a-alert>
+            <label class="mw-field"><span>用户名称</span><a-input v-model="editor.email" auto-focus :disabled="saving" :max-length="128" placeholder="例如：我的 iPhone" aria-label="用户名称"></a-input></label>
+            <label class="mw-field mw-switch-field"><span>启用用户</span><a-switch v-model="editor.enabled" :disabled="saving" :aria-checked="editor.enabled" aria-label="启用用户"></a-switch></label>
+            <section v-if="editor.hy" class="mw-editor-section">
+                <label class="mw-field mw-switch-field"><span>Hysteria 2（立即生效）</span><a-switch :checked="editor.hy.enabled" :disabled="editor.hyBusy" @change="value => manageHy(value ? 'enable' : 'disable')"></a-switch></label>
+                <template v-if="editor.hy.link"><a-button size="small" @click="copyHyLink">复制 HY2 链接</a-button> <a-button size="small" @click="showHyQR">二维码</a-button> <a-popconfirm title="重置后旧 HY2 链接失效，继续？" @confirm="manageHy('rotate')"><a-button size="small" :disabled="editor.hyBusy">重置凭据</a-button></a-popconfirm></template>
+            </section>
+            <section class="mw-editor-section" aria-label="个人额度与有效期">
+                <div class="mw-field-heading"><h3>[[ editor.legacyShared ? '历史共享额度' : '个人额度' ]]</h3><label class="mw-quota-switch"><span>限制用量</span><a-switch v-model="editor.limited" :disabled="saving || editor.legacyShared" :aria-checked="editor.limited" aria-label="限制个人用量"></a-switch></label></div>
+                <p v-if="editor.legacyShared" class="mw-field-help">此用户沿用历史额度组，限额与到期时间保持共享规则。</p>
+                <label v-if="editor.limited" class="mw-field"><span>每周期额度（GB）</span><a-input-number ref="editorQuota" v-model="editor.totalGB" :disabled="saving || editor.legacyShared" :min="0" :step="10" aria-label="个人每周期额度"></a-input-number></label>
+                <p v-else class="mw-quota-unlimited">无限额，按实际用量记录</p>
+                <p v-if="quotaPreview && !editor.legacyShared" class="mw-quota-preview" :class="{'is-warning':quotaPreviewWarning}" aria-live="polite">[[ quotaPreview ]]</p>
+                <label class="mw-field"><span>到期时间</span><a-date-picker ref="editorExpiry" v-model="editor.expiryValue" :disabled="saving || editor.legacyShared" show-time format="YYYY-MM-DD HH:mm:ss" placeholder="无限期" aria-label="用户到期时间"></a-date-picker></label>
+                <div v-if="!editor.legacyShared" class="mw-expiry-shortcuts" aria-label="快捷设置到期时间"><a-button size="small" :disabled="saving" @click="setExpiryShortcut('unlimited')">无限期</a-button><a-button size="small" :disabled="saving" @click="setExpiryShortcut('30')">延长30天</a-button><a-button size="small" :disabled="saving" @click="setExpiryShortcut('90')">延长90天</a-button></div>
+                <small v-if="editor.expiryValue" class="mw-field-help" aria-live="polite">到期：[[ editor.expiryValue.format('YYYY-MM-DD HH:mm:ss') ]]</small>
+                <small class="mw-field-help">每月 [[ editorResetDay ]] 日重置用量</small>
+            </section>
+            <details class="mw-uuid"><summary>用户标识 UUID</summary><code>[[ editor.clientId ]]</code></details>
+            <div class="mw-editor-footer">
+                <span v-if="!editor.create" class="mw-field-help mw-editor-change-state" role="status">[[ editorDirty ? '有未保存的更改' : '尚未修改' ]]</span>
+                <a-button :disabled="saving" @click="closeUser">取消</a-button>
+                <a-button type="primary" :disabled="!editor.create && !editorDirty" :loading="saving" @click="saveUser">保存</a-button>
+            </div>
+        </div>
+        <div v-if="delivery" class="mw-delivery"><a-icon type="check-circle" theme="twoTone" two-tone-color="#16a34a"></a-icon><h3>[[ name(delivery) ]]</h3><p>用户已保存，可以分发连接配置。</p><a-alert v-if="!canExport(delivery)" type="info" :message="ready ? status(delivery) : '正在读取状态，刷新后即可分发'"></a-alert><div class="mw-delivery-actions"><a-button type="primary" class="mw-delivery-copy" :class="{'is-copied':subscriptionCopied(delivery)}" :icon="subscriptionCopied(delivery) ? 'check' : 'copy'" :disabled="!canExport(delivery)" :loading="!!pending[delivery.id]" @click="distribute(delivery,'subscription')"><span aria-live="polite">[[ subscriptionCopied(delivery) ? '已复制' : '复制订阅' ]]</span></a-button><a-button :disabled="!canExport(delivery)" @click="distribute(delivery,'yaml')">下载 Clash 配置</a-button><a-button :disabled="!canExport(delivery)" @click="distribute(delivery,'qr')">二维码</a-button></div><a-button @click="closeUser">完成</a-button></div>
+    </a-drawer>
+</section>
+</script>
+{{end}}

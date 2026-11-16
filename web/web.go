@@ -5,8 +5,6 @@ import (
 	"crypto/tls"
 	"embed"
 	"github.com/BurntSushi/toml"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/robfig/cron/v3"
@@ -19,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"x-ui/config"
 	"x-ui/logger"
@@ -27,6 +26,7 @@ import (
 	"x-ui/web/job"
 	"x-ui/web/network"
 	"x-ui/web/service"
+	"x-ui/web/session"
 )
 
 //go:embed assets/*
@@ -77,7 +77,8 @@ func (f *wrapAssetsFileInfo) ModTime() time.Time {
 }
 
 type Server struct {
-	httpServer *http.Server
+	hyServer *http.Server
+ httpServer *http.Server
 	listener   net.Listener
 
 	index  *controller.IndexController
@@ -90,8 +91,10 @@ type Server struct {
 
 	cron *cron.Cron
 
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx     context.Context
+	cancel  context.CancelFunc
+	stopMu  sync.Mutex
+	stopped bool
 }
 
 func NewServer() *Server {
@@ -155,7 +158,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 	engine := gin.Default()
 
-	secret, err := s.settingService.GetSecret()
+	securityOptions, err := session.OptionsFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -166,8 +169,11 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 	assetsBasePath := basePath + "assets/"
 
-	store := cookie.NewStore(secret)
-	engine.Use(sessions.Sessions("session", store))
+	engine.ForwardedByClientIP = false
+	if err := engine.SetTrustedProxies(nil); err != nil {
+		return nil, err
+	}
+	engine.Use(session.Middleware(securityOptions, basePath))
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
 	})
@@ -303,12 +309,29 @@ func (s *Server) Start() (err error) {
 			s.Stop()
 		}
 	}()
+	startupSetting, err := s.settingService.GetAllSetting()
+	if err != nil {
+		return err
+	}
 
 	loc, err := s.settingService.GetTimeLocation()
 	if err != nil {
 		return err
 	}
 	s.cron = cron.New(cron.WithLocation(loc), cron.WithSeconds())
+	if service.HyAvailable() {
+		l, e := net.Listen("tcp4", "127.0.0.1:18741")
+		if e != nil {
+			return e
+		}
+		s.hyServer = &http.Server{Handler: http.HandlerFunc(service.HyAuth), ReadTimeout: 3 * time.Second, WriteTimeout: 3 * time.Second}
+		go s.hyServer.Serve(l)
+		s.cron.AddFunc("@every 5s", func() {
+			if e := service.CollectHy(); e != nil {
+				logger.Warning("HY2 accounting:", e)
+			}
+		})
+	}
 	s.cron.Start()
 
 	engine, err := s.initRouter()
@@ -345,6 +368,7 @@ func (s *Server) Start() (err error) {
 		}
 		c := &tls.Config{
 			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
 		}
 		listener = network.NewAutoHttpsListener(listener)
 		listener = tls.NewListener(listener, c)
@@ -357,9 +381,13 @@ func (s *Server) Start() (err error) {
 	s.listener = listener
 
 	s.startTask()
+	service.RecordPanelRuntimeSettings(startupSetting)
 
 	s.httpServer = &http.Server{
-		Handler: engine,
+		Handler:           engine,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 * 1024,
 	}
 
 	go func() {
@@ -370,20 +398,27 @@ func (s *Server) Start() (err error) {
 }
 
 func (s *Server) Stop() error {
-	s.cancel()
-	s.xrayService.StopXray()
+	s.stopMu.Lock()
+	defer s.stopMu.Unlock()
+	if s.stopped {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	jobs := context.Background()
 	if s.cron != nil {
-		s.cron.Stop()
+		jobs = s.cron.Stop()
 	}
-	var err1 error
-	var err2 error
-	if s.httpServer != nil {
-		err1 = s.httpServer.Shutdown(s.ctx)
+	if err := stopServerComponents(ctx, jobs, s.httpServer, &s.xrayService); err != nil {
+		return err
 	}
-	if s.listener != nil {
-		err2 = s.listener.Close()
+	if s.listener != nil && s.httpServer == nil {
+		s.listener.Close()
 	}
-	return common.Combine(err1, err2)
+	if s.hyServer!=nil{s.hyServer.Close()}
+ s.cancel()
+	s.stopped = true
+	return nil
 }
 
 func (s *Server) GetCtx() context.Context {

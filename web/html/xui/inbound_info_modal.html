@@ -10,9 +10,9 @@
 
     <section class="inbound-detail-hero" aria-label="入站摘要">
         <div>
-            <span>VLESS 入站</span>
+            <span>[[ dbInbound.transportLabel ]]</span>
             <strong>[[ dbInbound.remark || '未命名入站' ]]</strong>
-            <small>端口 [[ dbInbound.port ]] · [[ securityLabel ]]</small>
+            <small>[[ dbInbound.connectionLabel ]]</small>
         </div>
         <a-tag :color="dbInbound.enable ? 'green' : 'blue'">[[ dbInbound.enable ? '已启用' : '已停用' ]]</a-tag>
     </section>
@@ -28,11 +28,11 @@
         </div>
         <div>
             <span>月度限额</span>
-            <strong>[[ dbInbound.total > 0 ? sizeFormat(dbInbound.total) : '不限额' ]]</strong>
+            <strong>[[ dbInbound.isManagedExternal ? '每帐号独立额度' : (dbInbound.total > 0 ? sizeFormat(dbInbound.total) : '不限额') ]]</strong>
         </div>
         <div>
             <span>到期日期</span>
-            <strong>[[ dbInbound.expiryTime > 0 ? moment(dbInbound.expiryTime).format('YYYY-MM-DD') : '无限期' ]]</strong>
+            <strong>[[ dbInbound.isManagedExternal ? '按用户设置' : (dbInbound.expiryTime > 0 ? moment(dbInbound.expiryTime).format('YYYY-MM-DD') : '无限期') ]]</strong>
         </div>
     </section>
 
@@ -51,16 +51,34 @@
             </div>
             <div>
                 <span>端口</span>
-                <strong>[[ dbInbound.port ]]</strong>
+                <strong>[[ dbInbound.publicPort ]]</strong>
             </div>
             <div>
                 <span>传输方式</span>
                 <strong>[[ networkLabel ]]</strong>
             </div>
-            <div>
+            <div v-if="!inbound.isXHTTP">
                 <span>Flow</span>
                 <strong>[[ defaultFlow || '未设置' ]]</strong>
             </div>
+        </div>
+        <div v-if="inbound.isXHTTP" class="inbound-detail-config-grid xhttp-detail-fields">
+            <div><span>客户端模式</span><strong>stream-up · HTTP/2</strong></div>
+            <div><span>证书</span><strong>启用证书验证 · Caddy 托管</strong></div>
+            <div class="inbound-detail-full-value"><span>请求路径</span><strong>[[ inbound.stream.xhttp.path ]]</strong></div>
+        </div>
+    </section>
+
+    <section v-if="dbInbound.isManagedExternal && dbInbound.externalTls" class="inbound-detail-card" aria-label="公网证书">
+        <div class="inbound-detail-section-head">
+            <div><span>公网证书</span><small>手动检查证书有效性</small></div>
+            <a-button size="small" :loading="infoModal.endpointLoading" @click="infoModal.checkEndpointStatus()">检查证书</a-button>
+        </div>
+        <a-tag :color="infoModal.certificateColor">[[ infoModal.certificateLabel ]]</a-tag>
+        <p v-if="infoModal.endpointStatus && infoModal.endpointStatus.message">[[ infoModal.endpointStatus.message ]]</p>
+        <div v-if="infoModal.endpointStatus" class="inbound-detail-config-grid">
+            <div><span>到期时间</span><strong>[[ infoModal.endpointStatus.notAfter ? moment(infoModal.endpointStatus.notAfter).format('YYYY-MM-DD HH:mm:ss') : '—' ]]</strong></div>
+            <div><span>检查时间</span><strong>[[ infoModal.endpointStatus.checkedAt ? moment(infoModal.endpointStatus.checkedAt).format('YYYY-MM-DD HH:mm:ss') : '—' ]]</strong></div>
         </div>
     </section>
 
@@ -117,7 +135,7 @@
                             <strong>[[ user.email || `用户 ${index + 1}` ]]</strong>
                             <small>[[ userTrafficFor(user.id).hasData ? '本周期统计中' : '暂未记录流量' ]]</small>
                         </div>
-                        <a-tag color="blue">VLESS</a-tag>
+                        <a-tag color="blue">[[ dbInbound.transportLabel ]]</a-tag>
                     </header>
                     <div class="inbound-user-profile-traffic">
                         <div>
@@ -150,7 +168,7 @@
         <div class="inbound-detail-config-grid">
             <div>
                 <span>监听地址</span>
-                <strong>[[ listenAddress ]]</strong>
+                <strong>[[ listenAddress ]]:[[ dbInbound.port ]]</strong>
             </div>
             <div>
                 <span>嗅探</span>
@@ -181,16 +199,47 @@
         trafficLoading: false,
         userProfiles: {},
         profileLoading: false,
+        endpointStatus: null,
+        endpointLoading: false,
+        endpointRequestSeq: 0,
         onUsers: null,
         onEdit: null,
+        get certificateLabel() {
+            if (!this.endpointStatus) return '尚未检查';
+            return {valid: '证书有效', invalid: '证书校验失败', unreachable: '无法验证证书'}[this.endpointStatus.state] || '无法验证证书';
+        },
+        get certificateColor() {
+            if (!this.endpointStatus) return undefined;
+            return {valid: 'green', invalid: 'red', unreachable: 'orange'}[this.endpointStatus.state] || 'orange';
+        },
         show({dbInbound, onUsers=null, onEdit=null}) {
             this.inbound = dbInbound.toInbound();
             this.dbInbound = new DBInbound(dbInbound);
             this.onUsers = onUsers;
             this.onEdit = onEdit;
+            this.endpointRequestSeq++;
+            this.endpointStatus = null;
+            this.endpointLoading = false;
             this.visible = true;
             this.loadUserTraffic();
             this.loadUserProfiles();
+        },
+        async checkEndpointStatus() {
+            if (this.endpointLoading || !this.dbInbound.isManagedExternal || !this.dbInbound.externalTls) return;
+            const requestSeq = ++this.endpointRequestSeq;
+            const inboundId = this.dbInbound.id;
+            this.endpointLoading = true;
+            this.endpointStatus = null;
+            try {
+                const msg = await HttpUtil.post(`/xui/inbound/${inboundId}/endpointStatus`);
+                if (requestSeq !== this.endpointRequestSeq || !this.visible) return;
+                this.endpointStatus = msg.success && msg.obj ? msg.obj : {state: 'unreachable', message: '证书检查未完成，请重试。'};
+            } catch (_) {
+                if (requestSeq !== this.endpointRequestSeq || !this.visible) return;
+                this.endpointStatus = {state: 'unreachable', message: '证书检查未完成，请重试。'};
+            } finally {
+                if (requestSeq === this.endpointRequestSeq) this.endpointLoading = false;
+            }
         },
         async loadUserTraffic() {
             this.trafficLoading = true;
@@ -208,6 +257,7 @@
             this.profileLoading = true;
             this.userProfiles = {};
             try {
+                if (this.dbInbound.isManagedExternal) return;
                 const users = this.inbound.settings && Array.isArray(this.inbound.settings.vlesses) ? this.inbound.settings.vlesses : [];
                 const results = await Promise.all(users.map(async (user, index) => {
                     const msg = await HttpUtil.post(`/xui/inbound/${this.dbInbound.id}/userProfile`, {
@@ -223,6 +273,7 @@
             }
         },
         close() {
+            infoModal.endpointRequestSeq++;
             infoModal.visible = false;
             infoModal.onUsers = null;
             infoModal.onEdit = null;
@@ -258,7 +309,7 @@
                 return listen && listen !== '0.0.0.0' ? listen : '所有 IP';
             },
             get connectionServer() {
-                return location.hostname;
+                return this.dbInbound.externalHost || location.hostname;
             },
             get encryptionLabel() {
                 return (this.inbound.settings && this.inbound.settings.decryption) || 'none';
@@ -271,6 +322,7 @@
                 return user && String(user.flow || '').trim();
             },
             get securityLabel() {
+                if (this.dbInbound.externalTls) return 'TLS（Caddy）';
                 const security = this.inbound.stream && this.inbound.stream.security;
                 if (security === 'reality') return 'Reality';
                 if (security === 'tls') return 'TLS';

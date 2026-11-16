@@ -34,9 +34,9 @@ func (a *XUIController) index(c *gin.Context) {
 }
 
 func (a *XUIController) inbounds(c *gin.Context) {
-	html(c, "inbounds.html", "入站列表", nil)
+	html(c, "inbounds.html", "用户管理", nil)
 }
 
 func (a *XUIController) setting(c *gin.Context) {
-	html(c, "setting.html", "设置", nil)
+	html(c, "setting.html", "面板设置", nil)
 }

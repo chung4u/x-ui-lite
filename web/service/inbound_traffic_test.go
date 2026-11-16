@@ -166,6 +166,7 @@ func TestUpdateInboundManualTrafficResetClearsExhaustion(t *testing.T) {
 
 	service := InboundService{}
 	err := service.UpdateInbound(&model.Inbound{
+		ResetTraffic:   true,
 		Id:             original.Id,
 		Up:             0,
 		Down:           0,
@@ -189,5 +190,47 @@ func TestUpdateInboundManualTrafficResetClearsExhaustion(t *testing.T) {
 	}
 	if updated.Up != 0 || updated.Down != 0 || updated.TrafficExhausted {
 		t.Fatalf("manual reset should clear exhaustion state: %#v", updated)
+	}
+}
+
+func TestDailyUserTrafficAccumulationAndRollover(t *testing.T) {
+	if err := database.InitDB(filepath.Join(t.TempDir(), "daily.db")); err != nil {
+		t.Fatal(err)
+	}
+	db := database.GetDB()
+	inbound := &model.Inbound{UserId: 1, Port: 22003, Tag: "daily-test", Protocol: model.VLESS}
+	if err := db.Create(inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	s := InboundService{}
+	add := func() {
+		t.Helper()
+		if err := s.AddTraffic([]*xray.Traffic{{IsUser: true, UserTag: inbound.Tag, ClientID: "daily-user", Up: 7, Down: 11}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add()
+	add()
+	var row model.InboundUserTraffic
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.DailyUp != 14 || row.DailyDown != 22 || row.DailyStartedAt == 0 {
+		t.Fatalf("daily accumulation: %+v", row)
+	}
+	started := row.DailyStartedAt
+	if err := db.Model(&row).Update("daily_date", "2000-01-01").Error; err != nil {
+		t.Fatal(err)
+	}
+	add()
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.DailyUp != 7 || row.DailyDown != 11 || row.Up != 21 || row.Down != 33 || row.DailyStartedAt != started {
+		t.Fatalf("daily rollover: %+v", row)
+	}
+	date := time.Now().In(time.FixedZone("Asia/Shanghai", 8*60*60)).Format("2006-01-02")
+	if row.DailyDate != date {
+		t.Fatalf("date = %s, want %s", row.DailyDate, date)
 	}
 }

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # X-UI Lite prebuilt installer.
-# Installs the current X-UI Lite 1.0 release and preserves /etc/x-ui/x-ui.db.
+# Installs the pinned X-UI Lite release and preserves /etc/x-ui/x-ui.db.
 
 set -Eeuo pipefail
 
 REPOSITORY="${XUI_REPOSITORY:-chung4u/x-ui-lite}"
-VERSION="v1.0.2"
+VERSION="v1.1.0"
 INSTALL_DIR="${XUI_INSTALL_DIR:-/usr/local/x-ui}"
 DATA_DIR="${XUI_DATA_DIR:-/etc/x-ui}"
 SERVICE_NAME="${XUI_SERVICE_NAME:-x-ui}"
-XRAY_CORE_VERSION="26.6.27"
+XRAY_CORE_VERSION="26.11.9"
 TOKEN="${XUI_GITHUB_TOKEN:-${GH_TOKEN:-}}"
 WORK_DIR=""
 AUTH_HEADERS=()
@@ -32,7 +32,7 @@ trap cleanup EXIT
 
 [[ "${EUID}" -eq 0 ]] || fail "请使用 root 或 sudo 执行此安装脚本。"
 if [[ -n "${XUI_VERSION:-}" && "$XUI_VERSION" != "$VERSION" ]]; then
-    fail "安装器仅支持当前 1.0 正式版（${VERSION}）。"
+    fail "此安装器固定使用 ${VERSION}。"
 fi
 if [[ -n "$TOKEN" ]]; then AUTH_HEADERS=(-H "Authorization: Bearer ${TOKEN}"); fi
 
@@ -149,7 +149,14 @@ show_install_access() {
         install_title="X-UI 首次安装完成"
     fi
     printf '\n\033[1;32m========================================\n          %s\n========================================\033[0m\n' "$install_title"
-    printf '访问地址：\033[1;36m%s://%s:%s%s\033[0m\n' "$PANEL_PROTOCOL" "$ACCESS_HOST" "$PANEL_PORT" "$PANEL_BASE_PATH"
+    if [[ "$PANEL_PROTOCOL" == "https" ]]; then
+        local url_host="$ACCESS_HOST"
+        if [[ "$url_host" == *:* && "$url_host" != \[*\] ]]; then url_host="[$url_host]"; fi
+        printf '访问地址：\033[1;36mhttps://%s:%s%s\033[0m\n' "$url_host" "$PANEL_PORT" "$PANEL_BASE_PATH"
+    else
+        printf '访问地址（SSH 隧道）：\033[1;36mhttp://127.0.0.1:%s%s\033[0m\n' "$PANEL_PORT" "$PANEL_BASE_PATH"
+        printf '请在本机使用 SSH 转发（将 root 换成你的 SSH 用户）：ssh -N -L 127.0.0.1:%s:127.0.0.1:%s root@%s\n' "$PANEL_PORT" "$PANEL_PORT" "$ACCESS_HOST"
+    fi
     if [[ "$FIRST_INSTALL" == "1" ]]; then
         printf '用户名：  \033[1;36m%s\033[0m\n密码：    \033[1;36m%s\033[0m\n' "$PANEL_USERNAME" "$PANEL_PASSWORD"
         printf '\n防火墙处理：%s\n' "$FIREWALL_RESULT"
@@ -170,6 +177,7 @@ curl --fail --silent --show-error --location --retry 3 \
     -o "$ARCHIVE"
 tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 [[ -x "$WORK_DIR/x-ui" && -x "$WORK_DIR/bin/xray-linux-${ARCH}" ]] || fail "安装包内容不完整。"
+[[ "$("$WORK_DIR/x-ui" -v)" == "${VERSION#v}" ]] || fail "安装包内的面板版本与 ${VERSION} 不一致。"
 
 BACKUP_DIR="${INSTALL_DIR}/backups/$(date +%Y%m%d-%H%M%S)"
 if [[ -d "$INSTALL_DIR" ]]; then
@@ -194,11 +202,11 @@ ln -sfn "$INSTALL_DIR/x-ui.sh" /usr/local/bin/x-ui
 
 if [[ "$FIRST_INSTALL" == "1" ]]; then
     PANEL_USERNAME="${XUI_USERNAME:-admin}"
-    PANEL_PASSWORD="${XUI_PASSWORD:-admin}"
+    PANEL_PASSWORD="${XUI_PASSWORD:-$(head -c 24 /dev/urandom | base64 | tr -d '\n')}"
     PANEL_PORT="$(choose_panel_port)"
     PANEL_BASE_PATH="/${XUI_BASE_PATH:-$(random_path_segment)}/"
     info "初始化首次安装的访问凭据"
-    "$INSTALL_DIR/x-ui" setting -username "$PANEL_USERNAME" -password "$PANEL_PASSWORD"
+    printf '%s' "$PANEL_PASSWORD" | "$INSTALL_DIR/x-ui" setting -username "$PANEL_USERNAME" -password-stdin
     "$INSTALL_DIR/x-ui" setting -port "$PANEL_PORT"
     "$INSTALL_DIR/x-ui" setting -base-path "$PANEL_BASE_PATH"
     open_panel_firewall "$PANEL_PORT"
