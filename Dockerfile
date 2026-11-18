@@ -1,6 +1,6 @@
 FROM alpine:3.22 AS release
 ARG TARGETARCH
-ARG XUI_VERSION=v1.1.2
+ARG XUI_VERSION=v1.1.3
 WORKDIR /release
 RUN set -eu; \
     archive="x-ui-linux-${TARGETARCH}.tar.gz"; \

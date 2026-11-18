@@ -304,6 +304,15 @@ func (s *ServerService) RefreshMonthlyTraffic() (MonthlyTraffic, error) {
 }
 
 func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint64, error)) (MonthlyTraffic, error) {
+	return s.sampleMonthlyTraffic(readCounters, time.Now, false)
+}
+
+func (s *ServerService) FlushMonthlyTraffic() error {
+	_, err := s.sampleMonthlyTraffic(externalNetworkTraffic, time.Now, true)
+	return err
+}
+
+func (s *ServerService) sampleMonthlyTraffic(readCounters func() (uint64, uint64, error), clock func() time.Time, flush bool) (MonthlyTraffic, error) {
 	// Serialize the observation as well as its application. Otherwise a delayed
 	// older observation can look like a reboot and add the entire OS counter.
 	s.trafficMu.Lock()
@@ -313,7 +322,7 @@ func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint6
 	if err != nil {
 		return MonthlyTraffic{}, err
 	}
-	now := time.Now()
+	now := clock()
 
 	if err := s.refreshTrafficConfigLocked(now); err != nil {
 		return MonthlyTraffic{}, err
@@ -329,12 +338,16 @@ func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint6
 	localNow := now.In(s.trafficLocation)
 	periodStart := trafficPeriodStart(localNow, s.trafficResetDay)
 	periodKey := periodStart.Format("2006-01-02")
-	forcePersist := false
+	dateKey := localNow.Format("2006-01-02")
+	_, dayKnown := s.trafficState.DailyUpload[dateKey]
+	forcePersist := flush || (s.trafficLimitGB > 0 && !dayKnown)
 	if s.trafficState.PeriodStart != periodKey {
-		s.trafficState.Initialized = false
+		// Assign the delta crossing a natural billing boundary to its sample date.
+		if s.trafficState.PeriodStart != trafficPeriodStart(periodStart.Add(-time.Nanosecond), s.trafficResetDay).Format("2006-01-02") {
+			s.trafficState.Initialized = false
+		}
 		s.trafficState.PeriodStart = periodKey
 		s.trafficState.UsedBytes = 0
-		s.trafficState.LastSent = sent
 		forcePersist = true
 	}
 	if s.trafficState.DailyTraffic == nil {
@@ -390,10 +403,7 @@ func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint6
 		nextReset := trafficNextReset(periodStart, s.trafficResetDay)
 		periodDaily := trafficDailyForPeriod(s.trafficState.DailyUpload, periodStart, localNow)
 		uploadUsed := trafficDailyTotal(periodDaily)
-		if s.trafficState.UsedBytes != uploadUsed {
-			s.trafficState.UsedBytes = uploadUsed
-			forcePersist = true
-		}
+		s.trafficState.UsedBytes = uploadUsed
 		averageDaily, projected, confidence := trafficForecast(uploadUsed, periodDaily, localNow, nextReset)
 		remaining := uint64(0)
 		if uploadUsed < limit {
@@ -430,6 +440,7 @@ func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint6
 
 	if forcePersist || now.Sub(s.trafficLastPersist) >= 30*time.Second {
 		if err := s.settingService.SaveMonthlyTrafficState(s.trafficState); err != nil {
+			s.trafficLastPersist = time.Time{}
 			return MonthlyTraffic{}, err
 		}
 		s.trafficLastPersist = now
@@ -540,12 +551,9 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	}
 	status.Xray.Version = s.xrayService.GetXrayVersion()
 
-	monthlyTraffic, err := s.RefreshMonthlyTraffic()
-	if err != nil {
-		logger.Warning("refresh monthly traffic failed:", err)
-	} else {
-		status.MonthlyTraffic = monthlyTraffic
-	}
+	s.trafficMu.Lock()
+	status.MonthlyTraffic = s.trafficSnapshot
+	s.trafficMu.Unlock()
 
 	return status
 }

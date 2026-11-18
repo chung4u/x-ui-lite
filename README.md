@@ -15,7 +15,7 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-lite/main/scripts/install.sh)
 ```
 
-安装器下载当前 **v1.1.2** 预编译包，自动识别 Linux amd64 或 arm64。发行包内置 Xray 26.11.9。安装器校验发行包的 SHA-256。Docker 使用相同架构的正式发行包。已安装旧版的用户可使用上方命令更新。
+安装器下载当前 **v1.1.3** 预编译包，自动识别 Linux amd64 或 arm64。发行包内置 Xray 26.11.9。安装器校验发行包的 SHA-256。Docker 使用相同架构的正式发行包。已安装旧版的用户可使用上方命令更新。
 
 首次安装会输出完整访问地址、管理员账号、随机密码及防火墙处理结果。默认端口为 `54321`，默认账号为 `admin`。通过安装器输出的 SSH 隧道指引完成初次登录，或通过 HTTPS 管理。升级前请确认管理入口并备份数据库。[管理员安全升级](docs/admin-upgrade.md)
 

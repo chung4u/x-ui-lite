@@ -409,7 +409,11 @@ func (s *Server) Stop() error {
 	if s.cron != nil {
 		jobs = s.cron.Stop()
 	}
-	if err := stopServerComponents(ctx, jobs, s.httpServer, &s.xrayService); err != nil {
+	var checkpoint func() error
+	if s.server != nil {
+		checkpoint = s.server.FlushMonthlyTraffic
+	}
+	if err := stopServerComponents(ctx, jobs, s.httpServer, checkpoint, &s.xrayService); err != nil {
 		return err
 	}
 	if s.listener != nil && s.httpServer == nil {

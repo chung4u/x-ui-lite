@@ -448,7 +448,7 @@
                     <small>运行趋势</small>
                     <strong>[[ summaryTitle ]]</strong>
                 </span>
-                <svg v-if="rows.length" class="runtime-trend-mini-chart" viewBox="0 0 320 56" preserveAspectRatio="none" aria-hidden="true">
+                <svg v-if="buckets.length" class="runtime-trend-mini-chart" viewBox="0 0 320 56" preserveAspectRatio="none" aria-hidden="true">
                     <rect v-for="bar in summaryBars" :key="bar.index" :x="bar.x" :y="bar.y" :width="bar.width" :height="bar.height" rx="1.5"
                           class="runtime-trend-mini-bar" :class="'is-' + bar.state"></rect>
                 </svg>
@@ -470,7 +470,7 @@
                     </a-radio-group>
                 </div>
                 <a-alert v-if="error" type="warning" message="运行趋势暂不可用" show-icon></a-alert>
-                <a-empty v-else-if="!rows.length" description="正在积累运行数据"></a-empty>
+                <a-empty v-else-if="!rows.length" :description="detailLoaded ? '正在积累运行数据' : '正在读取趋势'"></a-empty>
                 <template v-else>
                     <section class="runtime-trend-analytics-chart" @mouseleave="selected=null">
                         <div v-if="tab !== 'xray'" class="runtime-trend-legend" aria-label="图表图例">
@@ -533,7 +533,7 @@
             </div>
             </transition>
         </div>`,
-        data() { return {rows:[], tab:'resource', selected:null, error:false, expanded:false, now:Date.now()/1000, windowSeconds:14*24*60*60, timer:null}; },
+        data() { return {rows:[], buckets:[], requestID:0, detailLoaded:false, tab:'resource', selected:null, error:false, expanded:false, now:Date.now()/1000, windowSeconds:14*24*60*60, timer:null}; },
         computed: {
             metrics() { return this.tab==='resource' ? [{key:'cpu',label:'CPU',color:'#3268d6',percent:true},{key:'memory',label:'运行内存',color:'#58a6ff',percent:true}] : [{key:'upload',label:'公网出站速度',color:'#3268d6'},{key:'connections',label:'网络连接',color:'#a37ee8'}]; },
             abnormalRows() { return this.rows.filter(row => row.state !== 'running'); },
@@ -550,22 +550,23 @@
             runningDisplayRows() { return this.displayRows.filter(row=>row.state==='running'); },
             errorDisplayRows() { return this.displayRows.filter(row=>row.state!=='running'); },
             summaryBars() {
-                const count=56, width=320/count, start=this.now-this.windowSeconds, interval=this.windowSeconds/count;
+                const count=56, width=320/count;
+                const byIndex=new Map(this.buckets.map(bucket=>[bucket.bucket,bucket]));
                 return Array.from({length:count},(_,index)=>{
-                    const from=start+index*interval, to=from+interval;
-                    const samples=this.rows.filter(row=>row.time>=from&&row.time<to);
-                    const state=!samples.length?'gap':(samples.some(row=>row.state!=='running')?'error':'running');
-                    const peak=samples.length?Math.max(...samples.map(row=>Number(row.cpuPeak)||Number(row.cpu)||0)):0;
+                    const sample=byIndex.get(index);
+                    const state=!sample?'gap':(sample.abnormal?'error':'running');
+                    const peak=sample ? sample.peak : 0;
                     const height=state==='gap'?8:Math.max(12,Math.min(46,12+peak*.34));
                     return {index,state,x:index*width+.8,width:Math.max(2,width-1.6),height,y:52-height};
                 });
             },
             summaryTitle() {
                 if (this.error) return '运行趋势暂不可用';
-                if (!this.rows.length) return '正在积累运行数据';
-                return this.abnormalRows.length ? `近 2 周发现 ${this.abnormalRows.length} 次异常` : '近 2 周运行稳定';
+                if (!this.buckets.length) return '正在积累运行数据';
+                return this.summaryAbnormal ? `近 2 周发现 ${this.summaryAbnormal} 次异常` : '近 2 周运行稳定';
             },
-            summaryState() { return this.error ? 'is-error' : (this.abnormalRows.length ? 'has-issue' : 'is-stable'); },
+            summaryAbnormal() { return this.buckets.reduce((sum,b)=>sum+b.abnormal,0); },
+            summaryState() { return this.error ? 'is-error' : (this.summaryAbnormal ? 'has-issue' : 'is-stable'); },
             activeTitle() { return this.tab==='resource'?'资源使用':(this.tab==='network'?'网络状态':'Xray 可用性'); },
             latest() { return this.rows.length?this.rows[this.rows.length-1]:{}; },
             activePrimary() {
@@ -581,6 +582,9 @@
                 return this.abnormalRows.length?`发现 ${this.abnormalRows.length} 次异常`:'未发现运行异常';
             },
             availability() { return this.rows.length?Number((this.rows.filter(row=>row.state==='running').length/this.rows.length*100).toFixed(2)):0; },
+            metricPeaks() {
+                return this.rows.reduce((peak,row)=>({upload:Math.max(peak.upload,row.upload||0),connections:Math.max(peak.connections,row.connections||0)}),{upload:1,connections:1});
+            },
             chartGrid() { return [28,88,150]; },
             tooltipStyle() {
                 if (!this.selected) return {};
@@ -588,11 +592,39 @@
             }
         },
         methods: {
-            async load() { try { const msg=await HttpUtil.post('/server/runtimeTrend'); if(!msg.success) throw new Error(); this.rows=msg.obj||[]; this.now=Date.now()/1000; this.error=false; } catch(e) { this.error=true; } },
-            toggleExpanded() { this.expanded=!this.expanded; this.selected=null; },
+            async load() {
+                clearTimeout(this.timer);
+                const id=++this.requestID;
+                if (document.hidden) return;
+                try {
+                    const summary=await HttpUtil.post('/server/runtimeTrendSummary');
+                    if (id!==this.requestID) return;
+                    if (!summary.success) throw new Error();
+                    this.buckets=summary.obj;
+                    if (this.expanded) {
+                        const since=this.rows.length ? this.rows[this.rows.length-1].time : 0;
+                        const detail=await HttpUtil.post('/server/runtimeTrend?since='+since);
+                        if (id!==this.requestID) return;
+                        if (!detail.success) throw new Error();
+                        this.now=Date.now()/1000;
+                        this.rows=this.rows.concat(detail.obj).filter(row=>row.time>this.now-this.windowSeconds);
+                        this.detailLoaded=true;
+                    }
+                    this.error=false;
+                } catch(e) {
+                    if (id===this.requestID) this.error=true;
+                } finally {
+                    if (id===this.requestID && !document.hidden) this.timer=setTimeout(this.load,300000);
+                }
+            },
+            toggleExpanded() {
+                this.expanded=!this.expanded;
+                this.selected=null;
+                this.load();
+            },
             stamp(t) { return moment(t*1000).format('MM-DD HH:mm'); },
             x(t) { return Math.max(0,Math.min(1000,(t-(this.now-this.windowSeconds))/this.windowSeconds*1000)); },
-            metricMax(m) { return m.percent?100:Math.max(1,...this.rows.map(r=>Number(r[m.key])||0)); },
+            metricMax(m) { return m.percent?100:this.metricPeaks[m.key]; },
             y(v,m) { return 150-Math.max(0,Number(v)||0)/this.metricMax(m)*122; },
             line(segment,m) { return segment.map((row,index)=>(index?'L':'M')+this.x(row.time)+','+this.y(row[m.key],m)).join(' '); },
             area(segment,m) {
@@ -609,8 +641,8 @@
             },
             format(v,m) { return m.key==='upload'?sizeFormat(v)+'/s':Number(v||0).toFixed(m.percent?1:0)+(m.percent?'%':''); }
         },
-        mounted() { this.load(); this.timer=setInterval(()=>this.load(),60000); },
-        beforeDestroy() { clearInterval(this.timer); }
+        mounted() { document.addEventListener('visibilitychange',this.load); this.load(); },
+        beforeDestroy() { this.requestID++; clearTimeout(this.timer); document.removeEventListener('visibilitychange',this.load); }
     });
     const app = new Vue({
         delimiters: ['[[', ']]'],
@@ -702,37 +734,12 @@
                 return this.scaledSparklinePoints('connections', maximum);
             },
             async getInboundHealth() {
-                const msg = await HttpUtil.post('/xui/inbound/list');
+                const msg = await HttpUtil.post('/server/inboundHealth');
                 if (!msg.success) {
                     this.inboundHealthError = true;
                     return;
                 }
-                const now = Date.now();
-                const sevenDays = 7 * 24 * 60 * 60 * 1000;
-                const summary = {
-                    disabled: 0,
-                    expired: 0,
-                    expiring: 0,
-                    exhausted: 0,
-                    highUsage: 0,
-                    total: msg.obj.length,
-                    enabled: 0,
-                };
-                for (const inbound of msg.obj) {
-                    const used = Number(inbound.up || 0) + Number(inbound.down || 0);
-                    const total = Number(inbound.total || 0);
-                    const expiry = Number(inbound.expiryTime || 0);
-                    if (!inbound.enable) summary.disabled++;
-                    if (inbound.enable) summary.enabled++;
-                    if (expiry > 0 && expiry <= now) summary.expired++;
-                    if (expiry > now && expiry <= now + sevenDays) summary.expiring++;
-                    if (total > 0 && used >= total) {
-                        summary.exhausted++;
-                    } else if (total > 0 && used / total >= .9) {
-                        summary.highUsage++;
-                    }
-                }
-                this.inboundHealth = summary;
+                this.inboundHealth = msg.obj;
                 this.inboundHealthLoaded = true;
                 this.inboundHealthError = false;
             },

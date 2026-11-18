@@ -2,10 +2,13 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
+	"strconv"
+	"sync"
 	"time"
 	"x-ui/logger"
 	"x-ui/web/global"
 	"x-ui/web/service"
+	"x-ui/web/session"
 )
 
 type ServerController struct {
@@ -13,6 +16,8 @@ type ServerController struct {
 
 	serverService service.ServerService
 
+	sampleMu          sync.Mutex
+	statusMu          sync.Mutex
 	lastStatus        *service.Status
 	lastGetStatusTime time.Time
 
@@ -35,15 +40,40 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.Use(a.checkLogin)
 	g.POST("/status", a.status)
 	g.POST("/runtimeTrend", func(c *gin.Context) {
-		rows, err := service.RuntimeTrend()
+		since, err := strconv.ParseInt(c.DefaultQuery("since", "0"), 10, 64)
+		if err != nil || since < 0 {
+			c.JSON(400, gin.H{"success": false, "msg": "无效的趋势时间"})
+			return
+		}
+		rows, err := service.RuntimeTrendSince(since)
 		jsonObj(c, rows, err)
+	})
+	g.POST("/runtimeTrendSummary", func(c *gin.Context) {
+		buckets, err := service.RuntimeTrendSummary(time.Now())
+		jsonObj(c, buckets, err)
+	})
+	g.POST("/inboundHealth", func(c *gin.Context) {
+		health, err := service.InboundHealthSummary(session.GetLoginUser(c).Id, time.Now())
+		jsonObj(c, health, err)
 	})
 	g.POST("/getXrayVersion", a.getXrayVersion)
 	g.POST("/installXray/:version", a.installXray)
 }
 
 func (a *ServerController) refreshStatus() {
-	a.lastStatus = a.serverService.GetStatus(a.lastStatus)
+	if !a.sampleMu.TryLock() {
+		return
+	}
+	defer a.sampleMu.Unlock()
+	a.statusMu.Lock()
+	last, active := a.lastStatus, time.Since(a.lastGetStatusTime) <= 3*time.Minute
+	a.statusMu.Unlock()
+	if active {
+		next := a.serverService.GetStatus(last)
+		a.statusMu.Lock()
+		a.lastStatus = next
+		a.statusMu.Unlock()
+	}
 }
 
 func (a *ServerController) startTask() {
@@ -55,23 +85,21 @@ func (a *ServerController) startTask() {
 			logger.Warning("runtime trend:", err)
 		}
 	})
-	c.AddFunc("@every 10s", func() {
+	refreshMonthly := func() {
 		if _, err := a.serverService.RefreshMonthlyTraffic(); err != nil {
 			logger.Warning("refresh monthly traffic task failed:", err)
 		}
-	})
-	c.AddFunc("@every 2s", func() {
-		now := time.Now()
-		if now.Sub(a.lastGetStatusTime) > time.Minute*3 {
-			return
-		}
-		a.refreshStatus()
-	})
+	}
+	refreshMonthly()
+	c.AddFunc("@every 10s", refreshMonthly)
+	c.AddFunc("@every 2s", a.refreshStatus)
 }
 
 func (a *ServerController) status(c *gin.Context) {
+	a.statusMu.Lock()
 	a.lastGetStatusTime = time.Now()
 	status := a.lastStatus
+	a.statusMu.Unlock()
 	if status != nil {
 		// The ten-second collector continues after foreground polling pauses.
 		// Attach its latest diagnosis instead of returning a stale cached flag.
@@ -106,3 +134,5 @@ func (a *ServerController) installXray(c *gin.Context) {
 	err := a.serverService.UpdateXray(version)
 	jsonMsg(c, "安装 xray", err)
 }
+
+func (a *ServerController) FlushMonthlyTraffic() error { return a.serverService.FlushMonthlyTraffic() }

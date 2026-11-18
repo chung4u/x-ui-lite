@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 
 REPOSITORY="${XUI_REPOSITORY:-chung4u/x-ui-lite}"
-VERSION="v1.1.2"
+VERSION="v1.1.3"
 INSTALL_DIR="${XUI_INSTALL_DIR:-/usr/local/x-ui}"
 DATA_DIR="${XUI_DATA_DIR:-/etc/x-ui}"
 SERVICE_NAME="${XUI_SERVICE_NAME:-x-ui}"

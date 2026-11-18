@@ -261,6 +261,9 @@ func TestMonthlyTrafficConcurrentObservations(t *testing.T) {
 	if !s.trafficSnapshot.Daily[len(s.trafficSnapshot.Daily)-1].Estimated {
 		t.Fatal("lost recovery marker")
 	}
+	if _, err := s.sampleMonthlyTraffic(func() (uint64, uint64, error) { return counter, 0, nil }, time.Now, true); err != nil {
+		t.Fatal(err)
+	}
 	persisted, err := s.settingService.GetMonthlyTrafficState()
 	if err != nil {
 		t.Fatal(err)
@@ -349,5 +352,66 @@ func TestNetworkObservationInvalidBaseline(t *testing.T) {
 	reset.observeNetworkTraffic(recovered, now.Add(4*time.Second), 200, 400, nil)
 	if reset.NetIO.Up != 100 {
 		t.Fatalf("reset speed = %d", reset.NetIO.Up)
+	}
+}
+
+func TestCheckpointCadenceAndRollover(t *testing.T) {
+	policyTestDB(t)
+	now := time.Date(2026, 11, 30, 23, 59, 15, 0, time.UTC)
+	counter := uint64(1000)
+	fresh := func() *ServerService {
+		return &ServerService{trafficLimitGB: 10, trafficResetDay: 1, trafficLocation: time.UTC}
+	}
+	s := fresh()
+	sample := func(flush bool) MonthlyTraffic {
+		s.trafficConfigRefresh = now
+		v, err := s.sampleMonthlyTraffic(func() (uint64, uint64, error) { return counter, 0, nil }, func() time.Time { return now }, flush)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	saved := func() uint64 {
+		state, err := s.settingService.GetMonthlyTrafficState()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return state.LastSent
+	}
+	sample(false)
+	for i := 0; i < 29; i++ {
+		now = now.Add(time.Second)
+		counter++
+		sample(false)
+	}
+	if saved() != 1000 {
+		t.Fatal("persisted routine deltas early")
+	}
+	now = now.Add(time.Second)
+	counter++
+	sample(false)
+	if saved() != counter {
+		t.Fatal("checkpoint missing")
+	}
+	now = now.Add(15 * time.Second)
+	counter += 30
+	if v := sample(false); v.Used != 30 || saved() != counter {
+		t.Fatalf("cycle rollover lost increment: %d", v.Used)
+	}
+	now = now.Add(3 * time.Second)
+	counter += 9
+	sample(true)
+	s = fresh()
+	counter += 4
+	if v := sample(false); v.Used != 43 {
+		t.Fatalf("restart usage %d", v.Used)
+	}
+	now = time.Date(2026, 12, 1, 23, 59, 59, 0, time.UTC)
+	sample(false)
+	now = now.Add(time.Second)
+	counter++
+	sample(false)
+	if saved() != counter {
+		t.Fatal("midnight checkpoint missing")
 	}
 }

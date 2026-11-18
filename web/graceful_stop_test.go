@@ -38,7 +38,7 @@ func TestStopWaitsForJobsAndHTTPBeforeFinalTraffic(t *testing.T) {
 	defer cancel()
 	core := &testCoreStop{}
 	done := make(chan error, 1)
-	go func() { done <- stopServerComponents(ctx, jobs, srv.Config, core) }()
+	go func() { done <- stopServerComponents(ctx, jobs, srv.Config, nil, core) }()
 	select {
 	case err := <-done:
 		t.Fatalf("stopped before jobs: %v", err)
@@ -66,7 +66,7 @@ func TestStopTimeoutDoesNotStopCore(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	core := &testCoreStop{}
-	if err := stopServerComponents(ctx, jobs, nil, core); !errors.Is(err, context.Canceled) {
+	if err := stopServerComponents(ctx, jobs, nil, nil, core); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error=%v", err)
 	}
 	if core.calls != 0 {
@@ -77,11 +77,11 @@ func TestStopTimeoutDoesNotStopCore(t *testing.T) {
 func TestStopReturnsAccountingFailureForRetry(t *testing.T) {
 	want := errors.New("database unavailable")
 	core := &testCoreStop{err: want}
-	if err := stopServerComponents(context.Background(), context.Background(), nil, core); !errors.Is(err, want) {
+	if err := stopServerComponents(context.Background(), context.Background(), nil, nil, core); !errors.Is(err, want) {
 		t.Fatalf("error=%v", err)
 	}
 	core.err = nil
-	if err := stopServerComponents(context.Background(), context.Background(), nil, core); err != nil {
+	if err := stopServerComponents(context.Background(), context.Background(), nil, nil, core); err != nil {
 		t.Fatal(err)
 	}
 	if core.calls != 2 {

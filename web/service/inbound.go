@@ -467,3 +467,26 @@ func (s *InboundService) DisableInvalidInbounds() (int64, error) {
 		Update("enable", false)
 	return trafficResult.RowsAffected + expiryResult.RowsAffected, expiryResult.Error
 }
+
+type InboundHealth struct {
+	Total     int `json:"total"`
+	Enabled   int `json:"enabled"`
+	Disabled  int `json:"disabled"`
+	Expired   int `json:"expired"`
+	Expiring  int `json:"expiring"`
+	Exhausted int `json:"exhausted"`
+	HighUsage int `json:"highUsage"`
+}
+
+func InboundHealthSummary(userID int, now time.Time) (InboundHealth, error) {
+	var result InboundHealth
+	err := database.GetDB().Raw(`SELECT count(*) AS total,
+	count(CASE WHEN enable THEN 1 END) AS enabled,
+	count(CASE WHEN NOT enable THEN 1 END) AS disabled,
+	count(CASE WHEN expiry_time > 0 AND expiry_time <= ? THEN 1 END) AS expired,
+	count(CASE WHEN expiry_time > ? AND expiry_time <= ? THEN 1 END) AS expiring,
+	count(CASE WHEN total > 0 AND up+down >= total THEN 1 END) AS exhausted,
+	count(CASE WHEN total > 0 AND up+down < total AND up+down >= 0.9*total THEN 1 END) AS high_usage
+	FROM inbounds WHERE user_id = ? AND archived_at=0`, now.UnixMilli(), now.UnixMilli(), now.Add(7*24*time.Hour).UnixMilli(), userID).Scan(&result).Error
+	return result, err
+}

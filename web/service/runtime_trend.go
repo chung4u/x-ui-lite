@@ -31,8 +31,12 @@ const (
 )
 
 func RuntimeTrend() ([]model.RuntimeSample, error) {
+	return RuntimeTrendSince(0)
+}
+
+func RuntimeTrendSince(since int64) ([]model.RuntimeSample, error) {
 	rows := make([]model.RuntimeSample, 0)
-	err := database.GetDB().Where("time > ?", time.Now().Add(-runtimeTrendWindow).Unix()).Order("time ASC").Limit(runtimeTrendSampleLimit).Find(&rows).Error
+	err := database.GetDB().Where("time > ?", max(since, time.Now().Add(-runtimeTrendWindow).Unix())).Order("time ASC").Limit(runtimeTrendSampleLimit).Find(&rows).Error
 	return rows, err
 }
 
@@ -129,4 +133,22 @@ func (r *RuntimeCollector) Collect() (collectErr error) {
 	r.upSum = 0
 	r.row = model.RuntimeSample{}
 	return database.GetDB().Where("time <= ?", now.Add(-runtimeTrendWindow).Unix()).Delete(&model.RuntimeSample{}).Error
+}
+
+// One six-hour bucket per mini-chart bar, including only populated buckets.
+type TrendBucket struct {
+	Bucket   int     `json:"bucket"`
+	Samples  int     `json:"samples"`
+	Abnormal int     `json:"abnormal"`
+	Peak     float64 `json:"peak"`
+}
+
+func RuntimeTrendSummary(now time.Time) ([]TrendBucket, error) {
+	start := now.Add(-runtimeTrendWindow).Unix() + 1
+	rows := []TrendBucket{}
+	err := database.GetDB().Raw(`SELECT (time - ?) / 21600 AS bucket, count(*) AS samples,
+		count(CASE WHEN state <> 'running' THEN 1 END) AS abnormal,
+		max(CASE WHEN cpu_peak > 0 THEN cpu_peak ELSE cpu END) AS peak
+		FROM runtime_samples WHERE time BETWEEN ? AND ? GROUP BY bucket ORDER BY bucket`, start, start, now.Unix()).Scan(&rows).Error
+	return rows, err
 }
