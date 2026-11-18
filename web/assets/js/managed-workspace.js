@@ -340,7 +340,7 @@ const managedWorkspaceOptions = {
             if (u) this.manageHy('status');
         },
         copyHyLink() {userModal.copyText(this.editor.hy.link,'HY2 链接已复制');},
-        showHyQR() {qrModal.show('Hysteria 2',this.editor.hy.link);},
+        showHyQR() {qrModal.show(this.editor.hy.name || 'Hysteria 2',this.editor.hy.link);},
         async manageHy(action) {
             const editor=this.editor;
             if (!editor || editor.create || editor.hyBusy) return;

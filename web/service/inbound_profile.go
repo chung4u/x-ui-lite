@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -243,6 +244,9 @@ func buildVLESSUserProfile(inbound *model.Inbound, clientID string, host string,
 		}, {Name: "广告过滤", Type: "select", Proxies: []string{"DIRECT", "REJECT"}}},
 		Rules: []string{directProfileRule(server), "DOMAIN-SUFFIX,localhost,DIRECT", "DOMAIN-SUFFIX,local,DIRECT", "DOMAIN-SUFFIX,lan,DIRECT", "GEOSITE,category-ads-all,广告过滤", "DOMAIN-SUFFIX,cn,DIRECT", "GEOIP,LAN,DIRECT", "GEOSITE,cn,DIRECT", "GEOIP,CN,DIRECT", "MATCH,PROXY"},
 	}
+	if err := applySubscriptionPolicy(&config); err != nil {
+		return nil, err
+	}
 	hy, err := hyProxy(inbound.Id, clientID)
 	if err != nil {
 		return nil, err
@@ -276,6 +280,32 @@ func buildVLESSUserProfile(inbound *model.Inbound, clientID string, host string,
 		FileName:         safeProfileFileName(name) + ".yaml",
 		Connection:       connectionDetailsFromProxy(proxy),
 	}, nil
+}
+
+// An installation can keep its existing client DNS and routing policy when
+// moving from a locally branded build to the shared release binary.
+func applySubscriptionPolicy(config *clashVLESSConfig) error {
+	path := os.Getenv("XUI_SUBSCRIPTION_POLICY_FILE")
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取订阅策略失败: %w", err)
+	}
+	var policy struct {
+		DNS   map[string]interface{} `json:"dns"`
+		Rules []string               `json:"rules"`
+	}
+	if err = json.Unmarshal(data, &policy); err != nil {
+		return fmt.Errorf("解析订阅策略失败: %w", err)
+	}
+	if len(policy.DNS) == 0 || len(policy.Rules) == 0 {
+		return fmt.Errorf("订阅策略需包含 DNS 和规则")
+	}
+	config.DNS, config.Rules = policy.DNS, policy.Rules
+	config.ProxyGroups = config.ProxyGroups[:1]
+	return nil
 }
 
 func connectionDetailsFromProxy(proxy clashVLESSProxy) VLESSConnectionDetails {

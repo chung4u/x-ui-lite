@@ -42,7 +42,17 @@ jobs:
           mkdir -p package/bin
           unzip -p "$XRAY_ZIP" xray > "package/bin/xray-linux-$TARGET_ARCH"
           chmod 0755 "package/bin/xray-linux-$TARGET_ARCH"
-          cp bin/geoip.dat bin/geosite.dat package/bin/
+          geo_tag=202611152204
+          for name in geoip.dat geosite.dat; do
+            curl -fsSL --retry 3 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/$geo_tag/$name" -o "package/bin/$name"
+          done
+          (
+            cd package/bin
+            echo '304ac8a1cbcc8166e4f5a4f32955e4d0fb77a1bd713583e371b30ee27f3659d8  geoip.dat' | sha256sum -c -
+            echo '269f7740e328b592376ea99f2adb12f83d5bc17b024e584c8a7b3706ba5c789d  geosite.dat' | sha256sum -c -
+          )
+          grep -Fx "ARG XUI_VERSION=$RELEASE_TAG" Dockerfile
+          grep -Fx "VERSION=\"$RELEASE_TAG\"" scripts/install.sh
           cp x-ui.service x-ui.sh scripts/install.sh package/
           docker run --rm \
             -e TARGET_ARCH \
@@ -62,6 +72,11 @@ jobs:
               printf "%s" "release-smoke-password" | ./x-ui setting -username smoke-admin -password-stdin
               ./x-ui check
             '
+          (
+            cd package
+            printf 'version=%s\ncommit=%s\narch=%s\nxray=%s\ngeo=%s\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" "$TARGET_ARCH" "26.11.9" "$geo_tag" > BUILDINFO
+            sha256sum x-ui bin/* BUILDINFO x-ui.service x-ui.sh install.sh > PACKAGE.SHA256
+          )
           tar -czf "x-ui-linux-$TARGET_ARCH.tar.gz" -C package .
       - uses: actions/upload-artifact@v4
         with:
@@ -90,9 +105,40 @@ jobs:
           notes_file="$RUNNER_TEMP/release-notes.md"
           git for-each-ref --format='%(contents)' "refs/tags/$TAG_NAME" > "$notes_file"
           test -s "$notes_file"
-          gh release create "$TAG_NAME" release-assets/x-ui-linux-*.tar.gz \
+          (cd release-assets && sha256sum x-ui-linux-*.tar.gz > SHA256SUMS)
+          gh release create "$TAG_NAME" release-assets/x-ui-linux-*.tar.gz release-assets/SHA256SUMS scripts/install.sh \
             --repo "$GITHUB_REPOSITORY" \
             --title "X-UI Lite $TAG_NAME" \
             --verify-tag \
             --latest \
             --notes-file "$notes_file"
+
+
+  docker-smoke:
+    needs: release
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the published package in the Docker image
+        env:
+          TAG: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker build --pull --build-arg "TARGETARCH=$ARCH" -t x-ui-release .
+          docker run --rm -e TAG -e ARCH x-ui-release sh -ec '
+            sha256sum -c PACKAGE.SHA256
+            grep -Fx "arch=$ARCH" BUILDINFO
+            test "$(./x-ui -v)" = "${TAG#v}"
+            test "$(./bin/xray-linux-$ARCH version | cut -d" " -f2 | head -1)" = "26.11.9"
+            export XUI_DB_PATH=/tmp/check.db
+            printf %s smoke-password | ./x-ui setting -username smoke-admin -password-stdin
+            ./x-ui check
+          '

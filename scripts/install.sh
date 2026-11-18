@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 
 REPOSITORY="${XUI_REPOSITORY:-chung4u/x-ui-lite}"
-VERSION="v1.1.1"
+VERSION="v1.1.2"
 INSTALL_DIR="${XUI_INSTALL_DIR:-/usr/local/x-ui}"
 DATA_DIR="${XUI_DATA_DIR:-/etc/x-ui}"
 SERVICE_NAME="${XUI_SERVICE_NAME:-x-ui}"
@@ -166,6 +166,8 @@ show_install_access() {
 
 require_command curl
 require_command tar
+require_command sha256sum
+require_command flock
 [[ -f "${DATA_DIR}/x-ui.db" ]] || FIRST_INSTALL=1
 WORK_DIR="$(mktemp -d /tmp/x-ui-install.XXXXXX)"
 ARCHIVE="$WORK_DIR/x-ui-linux-${ARCH}.tar.gz"
@@ -175,15 +177,30 @@ curl --fail --silent --show-error --location --retry 3 \
     "${AUTH_HEADERS[@]}" \
     "https://github.com/${REPOSITORY}/releases/download/${VERSION}/x-ui-linux-${ARCH}.tar.gz" \
     -o "$ARCHIVE"
+curl --fail --silent --show-error --location --retry 3 "${AUTH_HEADERS[@]}" \
+    "https://github.com/${REPOSITORY}/releases/download/${VERSION}/SHA256SUMS" -o "$WORK_DIR/SHA256SUMS"
+(
+    cd "$WORK_DIR"
+    name="x-ui-linux-${ARCH}.tar.gz"
+    awk -v name="$name" '$2 == name { print; found++ } END { exit found != 1 }' SHA256SUMS > selected.sha256
+    sha256sum -c selected.sha256
+)
 tar -xzf "$ARCHIVE" -C "$WORK_DIR"
+(cd "$WORK_DIR" && sha256sum -c PACKAGE.SHA256)
+grep -Fxq "version=$VERSION" "$WORK_DIR/BUILDINFO" || fail "发行清单版本不一致。"
+grep -Fxq "arch=$ARCH" "$WORK_DIR/BUILDINFO" || fail "发行清单架构不一致。"
 [[ -x "$WORK_DIR/x-ui" && -x "$WORK_DIR/bin/xray-linux-${ARCH}" ]] || fail "安装包内容不完整。"
 [[ "$("$WORK_DIR/x-ui" -v)" == "${VERSION#v}" ]] || fail "安装包内的面板版本与 ${VERSION} 不一致。"
 
 BACKUP_DIR="${INSTALL_DIR}/backups/$(date +%Y%m%d-%H%M%S)"
-if [[ -d "$INSTALL_DIR" ]]; then
+mkdir -p "$INSTALL_DIR/bin"
+exec 9>"$INSTALL_DIR/bin/.x-ui-core.lock"
+flock -n 9 || fail "已有核心或规则更新正在执行。"
+[[ ! -d "$INSTALL_DIR/bin/.x-ui-core-rollback" ]] || fail "核心存在未完成的升级，请先启动面板完成恢复。"
+if [[ -f "$INSTALL_DIR/x-ui" ]]; then
     info "备份当前运行文件到 ${BACKUP_DIR}（不会修改面板数据库）"
     mkdir -p "$BACKUP_DIR"
-    for item in x-ui bin x-ui.sh install.sh; do
+    for item in x-ui bin x-ui.sh install.sh BUILDINFO PACKAGE.SHA256; do
         [[ -e "$INSTALL_DIR/$item" ]] && cp -a "$INSTALL_DIR/$item" "$BACKUP_DIR/"
     done
 fi
@@ -197,8 +214,10 @@ install -m 0644 "$WORK_DIR/bin/geoip.dat" "$INSTALL_DIR/bin/geoip.dat"
 install -m 0644 "$WORK_DIR/bin/geosite.dat" "$INSTALL_DIR/bin/geosite.dat"
 install -m 0755 "$WORK_DIR/x-ui.sh" "$INSTALL_DIR/x-ui.sh"
 install -m 0755 "$WORK_DIR/install.sh" "$INSTALL_DIR/install.sh"
+install -m 0644 "$WORK_DIR/BUILDINFO" "$WORK_DIR/PACKAGE.SHA256" "$INSTALL_DIR/"
 install -m 0644 "$WORK_DIR/x-ui.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 ln -sfn "$INSTALL_DIR/x-ui.sh" /usr/local/bin/x-ui
+exec 9>&-
 
 if [[ "$FIRST_INSTALL" == "1" ]]; then
     PANEL_USERNAME="${XUI_USERNAME:-admin}"

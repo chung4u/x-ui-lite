@@ -103,8 +103,16 @@ before_show_menu() {
     show_menu
 }
 
+run_project_installer() (
+    local installer
+    installer="$(mktemp)" || return 1
+    trap 'rm -f "$installer"' EXIT
+    curl -fsSL --retry 3 "https://github.com/${XUI_REPOSITORY:-chung4u/x-ui-lite}/releases/latest/download/install.sh" -o "$installer" || return 1
+    bash "$installer"
+)
+
 install() {
-    bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install_en.sh)
+    run_project_installer
     if [[ $? == 0 ]]; then
         if [[ $# == 0 ]]; then
             start
@@ -123,7 +131,7 @@ update() {
         fi
         return 0
     fi
-    bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install_en.sh)
+    run_project_installer
     if [[ $? == 0 ]]; then
         LOGI "upgrade finished,restart completed"
         exit 0
@@ -312,15 +320,7 @@ install_bbr() {
 }
 
 update_shell() {
-    wget -O /usr/bin/x-ui -N --no-check-certificate https://github.com/FranzKafkaYu/x-ui/raw/master/x-ui_en.sh
-    if [[ $? != 0 ]]; then
-        echo ""
-        LOGE "update shell script failed,please check whether your server can access github"
-        before_show_menu
-    else
-        chmod +x /usr/bin/x-ui
-        LOGI "update shell script succeed" && exit 0
-    fi
+    run_project_installer
 }
 
 # 0: running, 1: not running, 2: not installed
@@ -660,28 +660,7 @@ cron_jobs() {
 
 #update geo data
 update_geo() {
-    #back up first
-    mv ${PATH_FOR_GEO_IP} ${PATH_FOR_GEO_IP}.bak
-    #update data
-    curl -s -L -o ${PATH_FOR_GEO_IP} ${URL_FOR_GEO_IP}
-    if [[ $? -ne 0 ]]; then
-        echo "update geoip.dat failed"
-        mv ${PATH_FOR_GEO_IP}.bak ${PATH_FOR_GEO_IP}
-    else
-        echo "update geoip.dat succeed"
-        rm -f ${PATH_FOR_GEO_IP}.bak
-    fi
-    mv ${PATH_FOR_GEO_SITE} ${PATH_FOR_GEO_SITE}.bak
-    curl -s -L -o ${PATH_FOR_GEO_SITE} ${URL_FOR_GEO_SITE}
-    if [[ $? -ne 0 ]]; then
-        echo "update geosite.dat failed"
-        mv ${PATH_FOR_GEO_SITE}.bak ${PATH_FOR_GEO_SITE}
-    else
-        echo "update geosite.dat succeed"
-        rm -f ${PATH_FOR_GEO_SITE}.bak
-    fi
-    #restart x-ui
-    systemctl restart x-ui
+    bash /usr/local/x-ui/x-ui.sh geo
 }
 
 enable_auto_update_geo() {

@@ -1,29 +1,20 @@
 package service
 
 import (
-	"archive/zip"
 	"bufio"
-	"bytes"
-	"encoding/json"
-	"fmt"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/net"
-	"io"
-	"io/fs"
 	"math"
-	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 	"x-ui/logger"
 	"x-ui/util/sys"
-	"x-ui/xray"
 )
 
 type ProcessState string
@@ -35,10 +26,12 @@ const (
 )
 
 type Status struct {
-	T         time.Time `json:"-"`
-	Cpu       float64   `json:"cpu"`
-	CPUHealth CPUHealth `json:"cpuHealth"`
-	Mem       struct {
+	T                  time.Time `json:"-"`
+	networkSampleTime  time.Time
+	networkSampleValid bool
+	Cpu                float64   `json:"cpu"`
+	CPUHealth          CPUHealth `json:"cpuHealth"`
+	Mem                struct {
 		Current uint64 `json:"current"`
 		Total   uint64 `json:"total"`
 	} `json:"mem"`
@@ -92,10 +85,6 @@ type DailyTraffic struct {
 	Used      uint64 `json:"used"`
 	Up        uint64 `json:"up"`
 	Down      uint64 `json:"down"`
-}
-
-type Release struct {
-	TagName string `json:"tag_name"`
 }
 
 type ServerService struct {
@@ -272,7 +261,11 @@ func externalNetworkTraffic() (sent, received uint64, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	routes := defaultRouteInterfaces()
+	sent, received = sumExternalNetworkTraffic(stats, defaultRouteInterfaces())
+	return sent, received, nil
+}
+
+func sumExternalNetworkTraffic(stats []net.IOCountersStat, routes map[string]struct{}) (sent, received uint64) {
 	for _, stat := range stats {
 		if len(routes) > 0 {
 			if _, ok := routes[stat.Name]; !ok {
@@ -284,7 +277,7 @@ func externalNetworkTraffic() (sent, received uint64, err error) {
 		sent += stat.BytesSent
 		received += stat.BytesRecv
 	}
-	return sent, received, nil
+	return sent, received
 }
 
 func (s *ServerService) refreshTrafficConfigLocked(now time.Time) error {
@@ -445,6 +438,25 @@ func (s *ServerService) refreshMonthlyTraffic(readCounters func() (uint64, uint6
 	return s.trafficSnapshot, nil
 }
 
+// observeNetworkTraffic shares the public-interface counters used by monthly
+// accounting and runtime trends. Invalid observations never become a baseline.
+func (status *Status) observeNetworkTraffic(previous *Status, sampledAt time.Time, sent, received uint64, err error) {
+	if err != nil {
+		return
+	}
+	status.NetTraffic.Sent, status.NetTraffic.Recv = sent, received
+	status.networkSampleTime, status.networkSampleValid = sampledAt, true
+	if previous == nil || !previous.networkSampleValid {
+		return
+	}
+	seconds := sampledAt.Sub(previous.networkSampleTime).Seconds()
+	if seconds <= 0 {
+		return
+	}
+	status.NetIO.Up = uint64(float64(trafficCounterDelta(sent, previous.NetTraffic.Sent)) / seconds)
+	status.NetIO.Down = uint64(float64(trafficCounterDelta(received, previous.NetTraffic.Recv)) / seconds)
+}
+
 func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	now := time.Now()
 	status := &Status{
@@ -498,24 +510,10 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 		status.Loads = []float64{avgState.Load1, avgState.Load5, avgState.Load15}
 	}
 
-	ioStats, err := net.IOCounters(false)
-	if err != nil {
-		logger.Warning("get io counters failed:", err)
-	} else if len(ioStats) > 0 {
-		ioStat := ioStats[0]
-		status.NetTraffic.Sent = ioStat.BytesSent
-		status.NetTraffic.Recv = ioStat.BytesRecv
-
-		if lastStatus != nil {
-			duration := now.Sub(lastStatus.T)
-			seconds := float64(duration) / float64(time.Second)
-			up := uint64(float64(trafficCounterDelta(status.NetTraffic.Sent, lastStatus.NetTraffic.Sent)) / seconds)
-			down := uint64(float64(trafficCounterDelta(status.NetTraffic.Recv, lastStatus.NetTraffic.Recv)) / seconds)
-			status.NetIO.Up = up
-			status.NetIO.Down = down
-		}
-	} else {
-		logger.Warning("can not find io counters")
+	sent, received, networkErr := externalNetworkTraffic()
+	status.observeNetworkTraffic(lastStatus, time.Now(), sent, received, networkErr)
+	if networkErr != nil {
+		logger.Warning("get external io counters failed:", networkErr)
 	}
 
 	status.TcpCount, err = sys.GetTCPCount()
@@ -550,134 +548,4 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 	}
 
 	return status
-}
-
-func (s *ServerService) GetXrayVersions() ([]string, error) {
-	url := "https://api.github.com/repos/XTLS/Xray-core/releases"
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-	buffer := bytes.NewBuffer(make([]byte, 8192))
-	buffer.Reset()
-	_, err = buffer.ReadFrom(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	releases := make([]Release, 0)
-	err = json.Unmarshal(buffer.Bytes(), &releases)
-	if err != nil {
-		return nil, err
-	}
-	versions := make([]string, 0, len(releases))
-	for _, release := range releases {
-		versions = append(versions, release.TagName)
-	}
-	return versions, nil
-}
-
-func (s *ServerService) downloadXRay(version string) (string, error) {
-	osName := runtime.GOOS
-	arch := runtime.GOARCH
-
-	switch osName {
-	case "darwin":
-		osName = "macos"
-	}
-
-	switch arch {
-	case "amd64":
-		arch = "64"
-	case "arm64":
-		arch = "arm64-v8a"
-	}
-
-	fileName := fmt.Sprintf("Xray-%s-%s.zip", osName, arch)
-	url := fmt.Sprintf("https://github.com/XTLS/Xray-core/releases/download/%s/%s", version, fileName)
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	os.Remove(fileName)
-	file, err := os.Create(fileName)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return fileName, nil
-}
-
-func (s *ServerService) UpdateXray(version string) error {
-	zipFileName, err := s.downloadXRay(version)
-	if err != nil {
-		return err
-	}
-
-	zipFile, err := os.Open(zipFileName)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		zipFile.Close()
-		os.Remove(zipFileName)
-	}()
-
-	stat, err := zipFile.Stat()
-	if err != nil {
-		return err
-	}
-	reader, err := zip.NewReader(zipFile, stat.Size())
-	if err != nil {
-		return err
-	}
-
-	s.xrayService.StopXray()
-	defer func() {
-		err := s.xrayService.RestartXray(true)
-		if err != nil {
-			logger.Error("start xray failed:", err)
-		}
-	}()
-
-	copyZipFile := func(zipName string, fileName string) error {
-		zipFile, err := reader.Open(zipName)
-		if err != nil {
-			return err
-		}
-		os.Remove(fileName)
-		file, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.ModePerm)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		_, err = io.Copy(file, zipFile)
-		return err
-	}
-
-	err = copyZipFile("xray", xray.GetBinaryPath())
-	if err != nil {
-		return err
-	}
-	err = copyZipFile("geosite.dat", xray.GetGeositePath())
-	if err != nil {
-		return err
-	}
-	err = copyZipFile("geoip.dat", xray.GetGeoipPath())
-	if err != nil {
-		return err
-	}
-
-	return nil
-
 }

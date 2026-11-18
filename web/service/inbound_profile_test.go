@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -412,5 +413,24 @@ func TestManagedXHTTPExportsRespectUserAndSharedQuotaPolicies(t *testing.T) {
 	again, err := service.GetOrCreateVLESSUserSubscriptionToken(inbound.Id, 4, clientID)
 	if err != nil || again != token {
 		t.Fatal("reactivation must retain the subscription token")
+	}
+}
+
+func TestDeploymentSubscriptionPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.json")
+	t.Setenv("XUI_SUBSCRIPTION_POLICY_FILE", path)
+	t.Setenv("XUI_HY2_NAME", "Existing node")
+	cfg := clashVLESSConfig{ProxyGroups: []clashProxyGroup{{Name: "PROXY"}, {Name: "optional"}}}
+	if err := applySubscriptionPolicy(&cfg); err == nil {
+		t.Fatal("unreadable deployment policy ignored")
+	}
+	if err := os.WriteFile(path, []byte(`{"dns":{"enable":true},"rules":["DOMAIN,example.org,DIRECT","MATCH,PROXY"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := applySubscriptionPolicy(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ProxyGroups) != 1 || len(cfg.Rules) != 2 || cfg.Rules[0] != "DOMAIN,example.org,DIRECT" || cfg.DNS["enable"] != true || hyProxyName() != "Existing node" {
+		t.Fatal("existing deployment policy not preserved")
 	}
 }

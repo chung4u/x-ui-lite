@@ -1,12 +1,14 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"go.uber.org/atomic"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 	"x-ui/logger"
@@ -14,7 +16,7 @@ import (
 )
 
 var p *xray.Process
-var lock sync.Mutex
+var lock sync.RWMutex
 var isNeedXrayRestart atomic.Bool
 var result string
 var pendingTraffic []*xray.Traffic
@@ -26,10 +28,14 @@ type XrayService struct {
 }
 
 func (s *XrayService) IsXrayRunning() bool {
+	lock.RLock()
+	defer lock.RUnlock()
 	return p != nil && p.IsRunning()
 }
 
 func (s *XrayService) GetXrayErr() error {
+	lock.RLock()
+	defer lock.RUnlock()
 	if p == nil {
 		return nil
 	}
@@ -37,10 +43,12 @@ func (s *XrayService) GetXrayErr() error {
 }
 
 func (s *XrayService) GetXrayResult() string {
+	lock.Lock()
+	defer lock.Unlock()
 	if result != "" {
 		return result
 	}
-	if s.IsXrayRunning() {
+	if p != nil && p.IsRunning() {
 		return ""
 	}
 	if p == nil {
@@ -51,6 +59,8 @@ func (s *XrayService) GetXrayResult() string {
 }
 
 func (s *XrayService) GetXrayVersion() string {
+	lock.RLock()
+	defer lock.RUnlock()
 	if p == nil {
 		return "Unknown"
 	}
@@ -149,6 +159,10 @@ func (s *XrayService) RefreshInboundPolicies() error {
 }
 
 func validateXrayRuntimeConfig(config *xray.Config) error {
+	return validateCoreConfig(xray.GetBinaryPath(), "", config)
+}
+
+func validateCoreConfig(binary, assets string, config *xray.Config) error {
 	data, err := json.Marshal(config)
 	if err != nil {
 		return err
@@ -165,8 +179,14 @@ func validateXrayRuntimeConfig(config *xray.Config) error {
 	if err = file.Close(); err != nil {
 		return err
 	}
-	if err = exec.Command(xray.GetBinaryPath(), "run", "-test", "-config", file.Name()).Run(); err != nil {
-		return fmt.Errorf("Xray 配置检查失败；现有服务保持不变")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "run", "-test", "-config", file.Name())
+	if assets != "" {
+		cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+assets, "xray.location.asset="+assets)
+	}
+	if err = cmd.Run(); err != nil {
+		return fmt.Errorf("Xray 配置检查失败: %w", err)
 	}
 	return nil
 }
@@ -181,6 +201,9 @@ func (s *XrayService) RestartXray(isForce bool) (err error) {
 			lastApplyError = ""
 		}
 	}()
+	if err := recoverCoreUpdate(filepath.Dir(xray.GetBinaryPath())); err != nil {
+		return fmt.Errorf("恢复上次未完成的 Xray 升级失败: %w", err)
+	}
 	logger.Debug("restart xray, force:", isForce)
 	desired, err := s.GetXrayConfig()
 	if err != nil {
@@ -205,9 +228,6 @@ func (s *XrayService) RestartXray(isForce bool) (err error) {
 		previous = p.GetConfig()
 		if err = p.Stop(); err != nil {
 			return err
-		}
-		for n := 0; n < 20 && p.IsRunning(); n++ {
-			time.Sleep(25 * time.Millisecond)
 		}
 	}
 	p = xray.NewProcess(desired)

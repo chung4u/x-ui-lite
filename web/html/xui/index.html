@@ -95,13 +95,13 @@
                                             <div class="resource-icon"><a-icon type="swap"></a-icon></div>
                                             <div class="resource-value"><a-icon type="arrow-up"></a-icon> [[ compactSize(status.netIO.up) ]]/s</div>
                                         </div>
-                                        <div class="resource-label">实时网速</div>
+                                        <div class="resource-label">公网出站速度</div>
                                         <a-progress class="resource-progress-spacer" :show-info="false" :stroke-width="7"
                                                     :percent="0" aria-hidden="true"></a-progress>
                                         <svg class="resource-sparkline network-speed-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
                                             <polyline class="upload-line" :points="networkSpeedSparklinePoints('netUp')"></polyline>
                                         </svg>
-                                        <div class="resource-detail network-legend"><span class="upload">上传</span> · 最近 60 秒</div>
+                                        <div class="resource-detail network-legend"><span class="upload">公网出站</span> · 最近 60 秒</div>
                                     </a-card>
                                 </a-col>
                                 <a-col :xs="12" :sm="12" :xl="6" style="margin-bottom: 16px">
@@ -270,7 +270,7 @@
                                                 <span class="split-value-item"><a-icon type="cloud-upload"></a-icon>[[ sizeFormat(status.netTraffic.sent) ]]</span>
                                                 <span class="split-value-item"><a-icon type="cloud-download"></a-icon>[[ sizeFormat(status.netTraffic.recv) ]]</span>
                                             </div>
-                                            <div class="overview-meta">系统启动以来上传 / 下载</div>
+                                            <div class="overview-meta">系统启动以来公网出站 / 入站</div>
                                         </div>
                                     </a-card>
                                 </a-col>
@@ -535,7 +535,7 @@
         </div>`,
         data() { return {rows:[], tab:'resource', selected:null, error:false, expanded:false, now:Date.now()/1000, windowSeconds:14*24*60*60, timer:null}; },
         computed: {
-            metrics() { return this.tab==='resource' ? [{key:'cpu',label:'CPU',color:'#3268d6',percent:true},{key:'memory',label:'运行内存',color:'#58a6ff',percent:true}] : [{key:'upload',label:'实时流量',color:'#3268d6'},{key:'connections',label:'网络连接',color:'#a37ee8'}]; },
+            metrics() { return this.tab==='resource' ? [{key:'cpu',label:'CPU',color:'#3268d6',percent:true},{key:'memory',label:'运行内存',color:'#58a6ff',percent:true}] : [{key:'upload',label:'公网出站速度',color:'#3268d6'},{key:'connections',label:'网络连接',color:'#a37ee8'}]; },
             abnormalRows() { return this.rows.filter(row => row.state !== 'running'); },
             chartSegments() {
                 const segments=[];

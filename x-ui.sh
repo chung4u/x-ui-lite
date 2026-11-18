@@ -103,18 +103,15 @@ before_show_menu() {
     show_menu
 }
 
-run_project_installer() {
-    local installer="/usr/local/x-ui/install.sh"
-
-    if [[ ! -x "$installer" ]]; then
-        LOGE "未找到项目安装器：${installer}"
-        LOGE "请按项目 README 的“一键安装”说明执行。"
-        return 1
-    fi
-
+run_project_installer() (
+    set -e
+    local installer
+    installer="$(mktemp)" || return 1
+    trap 'rm -f "$installer"' EXIT
+    curl -fsSL --retry 3 "https://github.com/${XUI_REPOSITORY:-chung4u/x-ui-lite}/releases/latest/download/install.sh" -o "$installer" || return 1
     guard_compatible_update "$installer" || return 1
     bash "$installer"
-}
+)
 
 guard_compatible_update() {
     [[ -f /etc/x-ui/x-ui.db ]] || return 0
@@ -335,16 +332,7 @@ install_bbr() {
 }
 
 update_shell() {
-    guard_compatible_update || return 1
-    wget -O /usr/bin/x-ui -N --no-check-certificate https://github.com/FranzKafkaYu/x-ui/raw/master/x-ui.sh
-    if [[ $? != 0 ]]; then
-        echo ""
-        LOGE "下载脚本失败，请检查本机能否连接 Github"
-        before_show_menu
-    else
-        chmod +x /usr/bin/x-ui
-        LOGI "升级脚本成功，请重新运行脚本" && exit 0
-    fi
+    run_project_installer
 }
 
 # 0: running, 1: not running, 2: not installed
@@ -683,30 +671,28 @@ cron_jobs() {
 }
 
 #update geo data
-update_geo() {
-    #back up first
-    mv ${PATH_FOR_GEO_IP} ${PATH_FOR_GEO_IP}.bak
-    #update data
-    curl -s -L -o ${PATH_FOR_GEO_IP} ${URL_FOR_GEO_IP}
-    if [[ $? -ne 0 ]]; then
-        echo "update geoip.dat failed"
-        mv ${PATH_FOR_GEO_IP}.bak ${PATH_FOR_GEO_IP}
-    else
-        echo "update geoip.dat succeed"
-        rm -f ${PATH_FOR_GEO_IP}.bak
+update_geo() (
+    set -e
+    local dir stage
+    dir="$(dirname "$PATH_FOR_GEO_IP")"
+    stage="$(mktemp -d "$dir/.geo-update-XXXXXX")"
+    trap 'rm -rf -- "$stage"' EXIT
+    curl -fsSL --retry 3 "$URL_FOR_GEO_IP" -o "$stage/geoip.dat"
+    curl -fsSL --retry 3 "$URL_FOR_GEO_SITE" -o "$stage/geosite.dat"
+    [[ -s "$stage/geoip.dat" && -s "$stage/geosite.dat" ]]
+    chmod 0644 "$stage"/*.dat
+    exec 9>"$dir/.x-ui-core.lock"
+    flock -n 9 || { LOGE "已有更新正在执行"; return 1; }
+    [[ ! -d "$dir/.x-ui-core-rollback" ]] || { LOGE "核心正在恢复，请稍后重试"; return 1; }
+    ln "$PATH_FOR_GEO_IP" "$stage/old-ip"
+    mv -f -- "$stage/geoip.dat" "$PATH_FOR_GEO_IP"
+    if ! mv -f -- "$stage/geosite.dat" "$PATH_FOR_GEO_SITE"; then
+        mv -f -- "$stage/old-ip" "$PATH_FOR_GEO_IP"
+        return 1
     fi
-    mv ${PATH_FOR_GEO_SITE} ${PATH_FOR_GEO_SITE}.bak
-    curl -s -L -o ${PATH_FOR_GEO_SITE} ${URL_FOR_GEO_SITE}
-    if [[ $? -ne 0 ]]; then
-        echo "update geosite.dat failed"
-        mv ${PATH_FOR_GEO_SITE}.bak ${PATH_FOR_GEO_SITE}
-    else
-        echo "update geosite.dat succeed"
-        rm -f ${PATH_FOR_GEO_SITE}.bak
-    fi
-    #restart x-ui
+    exec 9>&-
     systemctl restart x-ui
-}
+)
 
 enable_auto_update_geo() {
     LOGI "正在开启自动更新geo数据..."

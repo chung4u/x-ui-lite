@@ -97,6 +97,7 @@ type process struct {
 
 	config  *Config
 	lines   *queue.Queue
+	done    chan struct{}
 	exitErr error
 }
 
@@ -109,22 +110,30 @@ func newProcess(config *Config) *process {
 }
 
 func (p *process) IsRunning() bool {
-	if p.cmd == nil || p.cmd.Process == nil {
+	if p.done == nil {
 		return false
 	}
-	if p.cmd.ProcessState == nil {
+	select {
+	case <-p.done:
+		return false
+	default:
 		return true
 	}
-	return false
 }
 
 func (p *process) GetErr() error {
+	if p.IsRunning() {
+		return nil
+	}
 	return p.exitErr
 }
 
 func (p *process) GetResult() string {
-	if p.lines.Empty() && p.exitErr != nil {
-		return p.exitErr.Error()
+	if p.lines.Empty() {
+		if err := p.GetErr(); err != nil {
+			return err.Error()
+		}
+		return ""
 	}
 	items, _ := p.lines.TakeUntil(func(item interface{}) bool {
 		return true
@@ -158,12 +167,14 @@ func (p *process) refreshAPIPort() {
 }
 
 func (p *process) refreshVersion() {
-	cmd := exec.Command(GetBinaryPath(), "-version")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, GetBinaryPath(), "-version")
 	data, err := cmd.Output()
 	if err != nil {
 		p.version = "Unknown"
 	} else {
-		datas := bytes.Split(data, []byte(" "))
+		datas := bytes.Fields(data)
 		if len(datas) <= 1 {
 			p.version = "Unknown"
 		} else {
@@ -241,11 +252,13 @@ func (p *process) Start() (err error) {
 		}
 	}()
 
+	if err = cmd.Start(); err != nil {
+		return err
+	}
+	p.done = make(chan struct{})
 	go func() {
-		err := cmd.Run()
-		if err != nil {
-			p.exitErr = err
-		}
+		p.exitErr = cmd.Wait()
+		close(p.done)
 	}()
 
 	p.refreshVersion()
@@ -258,10 +271,24 @@ func (p *process) Stop() error {
 	if !p.IsRunning() {
 		return errors.New("xray is not running")
 	}
-	return p.cmd.Process.Kill()
+	if err := p.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	select {
+	case <-p.done:
+		return nil
+	case <-time.After(5 * time.Second):
+		return errors.New("timed out waiting for Xray to exit")
+	}
 }
 
 func (p *process) GetTraffic(reset bool) ([]*Traffic, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return p.GetTrafficContext(ctx, reset)
+}
+
+func (p *process) GetTrafficContext(ctx context.Context, reset bool) ([]*Traffic, error) {
 	if p.apiPort == 0 {
 		return nil, common.NewError("xray api port wrong:", p.apiPort)
 	}
@@ -272,8 +299,6 @@ func (p *process) GetTraffic(reset bool) ([]*Traffic, error) {
 	defer conn.Close()
 
 	client := statsservice.NewStatsServiceClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
 	request := &statsservice.QueryStatsRequest{
 		Reset_: reset,
 	}

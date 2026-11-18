@@ -15,7 +15,7 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-lite/main/scripts/install.sh)
 ```
 
-安装器下载当前 **v1.1.1** 预编译包，自动识别 Linux amd64 或 arm64。发行包内置 Xray 26.11.9。
+安装器下载当前 **v1.1.2** 预编译包，自动识别 Linux amd64 或 arm64。发行包内置 Xray 26.11.9。安装器校验发行包的 SHA-256。Docker 使用相同架构的正式发行包。已安装旧版的用户可使用上方命令更新。
 
 首次安装会输出完整访问地址、管理员账号、随机密码及防火墙处理结果。默认端口为 `54321`，默认账号为 `admin`。通过安装器输出的 SSH 隧道指引完成初次登录，或通过 HTTPS 管理。升级前请确认管理入口并备份数据库。[管理员安全升级](docs/admin-upgrade.md)
 
@@ -62,5 +62,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-lite/main/scrip
 在同一主机部署独立的 Hysteria 2 服务，将 HTTP 认证指向 `http://127.0.0.1:18741/auth`，并让流量统计接口监听 `127.0.0.1:18742`。面板与统计接口使用相同密钥，面板从 `XUI_HY2_SECRET` 读取。将服务的公开域名和 UDP 端口写入 `XUI_HY2_PUBLIC_ADDR`，例如 `hy2.example.com:443`，证书须覆盖该域名。
 
 Hysteria 2 每次启动时应生成新的进程标识并写入 `XUI_HY2_EPOCH_FILE` 指定的文件，默认路径为 `/run/x-ui-hy2/epoch`。面板据此区分重启前后的流量计数。同一用户的 VLESS 和 Hysteria 2 用量计入同一额度。
+
+已有独立部署可用 `XUI_HY2_NAME` 保留原节点名。通过 `XUI_SUBSCRIPTION_POLICY_FILE` 指定 UTF-8 JSON 文件可以沿用客户端 DNS 和分流策略，文件包含 `dns` 对象和有序 `rules` 数组。自定义规则可使用 `PROXY`、`DIRECT` 和 `REJECT`。
 
 完整更新记录见 [CHANGELOG.md](./CHANGELOG.md)。

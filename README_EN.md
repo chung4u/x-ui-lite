@@ -46,15 +46,14 @@ If you need more language options ,please open a issue and let me know that
 for more detailed usages,plz see [WIKI](https://github.com/FranzKafkaYu/x-ui/wiki)
 
 # Installation
-Make sure your system `bash` and `curl` and `network` are ready,here we go
 
+Run the maintained installer as root on Linux amd64 or arm64.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/chung4u/x-ui-lite/main/scripts/install.sh)
 ```
-bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh)
-```  
-For English Users,please use the following command to install English supported version:  
-```
-bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install_en.sh)
-``` 
+
+The installer verifies the SHA-256 of the release archive. Docker uses the same release binaries. For an existing installation, keep a database backup and confirm administrator access before upgrading.
 
 ## Shortcut  
 After Installation，you can input `x-ui`to enter control menu，current menu details：

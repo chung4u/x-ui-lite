@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"github.com/shirou/gopsutil/net"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -300,5 +301,53 @@ func TestMonthlyTrafficTodayUsesSeriesTimeZone(t *testing.T) {
 				t.Fatal("today marker must match the sampled daily series")
 			}
 		}
+	}
+}
+
+func TestPublicEgressExcludesInternalForwarding(t *testing.T) {
+	stats := []net.IOCountersStat{
+		{Name: "enp1s0", BytesSent: 2000, BytesRecv: 3000},
+		{Name: "lo", BytesSent: 9000, BytesRecv: 9000},
+		{Name: "docker0", BytesSent: 7000},
+		{Name: "veth123", BytesSent: 7000},
+		{Name: "wgcf", BytesSent: 6000},
+	}
+	sent, recv := sumExternalNetworkTraffic(stats, map[string]struct{}{"enp1s0": {}})
+	if sent != 2000 || recv != 3000 {
+		t.Fatalf("public counters = %d/%d", sent, recv)
+	}
+	first := &Status{}
+	now := time.Now()
+	first.observeNetworkTraffic(nil, now, 1000, 1000, nil)
+	second := &Status{}
+	second.observeNetworkTraffic(first, now.Add(2*time.Second), sent, recv, nil)
+	if second.NetIO.Up != 500 || second.NetIO.Down != 1000 {
+		t.Fatalf("wrong speed: %+v", second.NetIO)
+	}
+}
+
+func TestNetworkObservationInvalidBaseline(t *testing.T) {
+	now := time.Now()
+	first := &Status{}
+	first.observeNetworkTraffic(nil, now, 1000000, 2000000, nil)
+	if first.NetIO.Up != 0 {
+		t.Fatal("first sample must not produce speed")
+	}
+	failed := &Status{}
+	failed.observeNetworkTraffic(first, now.Add(time.Second), 0, 0, errors.New("read failed"))
+	recovered := &Status{}
+	recovered.observeNetworkTraffic(failed, now.Add(2*time.Second), 1002000, 2002000, nil)
+	if recovered.NetIO.Up != 0 {
+		t.Fatal("failure produced a lifetime-counter spike")
+	}
+	sameTime := &Status{}
+	sameTime.observeNetworkTraffic(recovered, now.Add(2*time.Second), 1003000, 2003000, nil)
+	if sameTime.NetIO.Up != 0 {
+		t.Fatal("zero interval must not produce speed")
+	}
+	reset := &Status{}
+	reset.observeNetworkTraffic(recovered, now.Add(4*time.Second), 200, 400, nil)
+	if reset.NetIO.Up != 100 {
+		t.Fatalf("reset speed = %d", reset.NetIO.Up)
 	}
 }

@@ -25,7 +25,12 @@ import (
 var hyLock sync.Mutex
 var hyHTTP = &http.Client{Timeout: 3 * time.Second}
 
-const hyProxyName = "Hysteria 2"
+func hyProxyName() string {
+	if name := strings.TrimSpace(os.Getenv("XUI_HY2_NAME")); name != "" {
+		return name
+	}
+	return "Hysteria 2"
+}
 
 func HyAvailable() bool { return os.Getenv("XUI_HY2_SECRET") != "" }
 
@@ -100,9 +105,9 @@ func HyManage(id int, client, action string) (map[string]interface{}, error) {
 	default:
 		return nil, errors.New("未知操作")
 	}
-	result := map[string]interface{}{"enabled": key.Enabled}
+	result := map[string]interface{}{"enabled": key.Enabled, "name": hyProxyName()}
 	if key.Enabled && host != "" && ValidateInboundUserAccess(inbound, client) == nil {
-		result["link"] = (&url.URL{Scheme: "hysteria2", User: url.User(key.Secret), Host: net.JoinHostPort(host, strconv.Itoa(port)), Fragment: hyProxyName}).String()
+		result["link"] = (&url.URL{Scheme: "hysteria2", User: url.User(key.Secret), Host: net.JoinHostPort(host, strconv.Itoa(port)), Fragment: hyProxyName()}).String()
 	}
 	return result, nil
 }
@@ -235,5 +240,5 @@ func hyProxy(inboundID int, client string) (*clashVLESSProxy, error) {
 	if e != nil || !k.Enabled {
 		return nil, e
 	}
-	return &clashVLESSProxy{Name: hyProxyName, Type: "hysteria2", Server: host, Port: port, Password: k.Secret, SNI: host, UDP: true}, nil
+	return &clashVLESSProxy{Name: hyProxyName(), Type: "hysteria2", Server: host, Port: port, Password: k.Secret, SNI: host, UDP: true}, nil
 }
